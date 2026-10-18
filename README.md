@@ -2,6 +2,13 @@
 
 A local e-commerce storefront and CRM built with FastAPI, SQLAlchemy, SQLite, and Jinja templates.
 
+## Deploy on Render + Supabase
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for Supabase setup, Render dashboard steps,
+environment variables, persistent product photos, and deployment verification.
+The included `render.yaml` provisions a paid Render web service and image disk;
+Supabase provides PostgreSQL. No live cloud deployment is performed by these files.
+
 ## Run locally
 
 ```sh

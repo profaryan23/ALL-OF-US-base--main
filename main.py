@@ -6,6 +6,7 @@ import io
 import os
 import re
 import secrets
+import shutil
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -18,21 +19,41 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, create_engine, func, inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash, generate_password_hash
 
+IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
+SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-key-change-me")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@allofus.com").strip().lower()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///allofus.db")
+if IS_PRODUCTION:
+    if not DATABASE_URL.startswith(("postgres://", "postgresql://", "postgresql+psycopg2://")):
+        raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
+    if SECRET_KEY == "local-development-key-change-me" or len(SECRET_KEY) < 32:
+        raise RuntimeError("Set SECRET_KEY to a random value of at least 32 characters.")
+    if not ADMIN_EMAIL or ADMIN_PASSWORD == "admin123" or len(ADMIN_PASSWORD) < 16:
+        raise RuntimeError("Set ADMIN_EMAIL and a unique ADMIN_PASSWORD of at least 16 characters.")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-engine_options = {"connect_args": {"check_same_thread": False}} if DATABASE_URL.startswith("sqlite") else {}
+if DATABASE_URL.startswith("sqlite"):
+    engine_options = {"connect_args": {"check_same_thread": False}}
+else:
+    engine_options = {
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 0,
+        "connect_args": {"connect_timeout": 10},
+    }
 if DATABASE_URL in {"sqlite://", "sqlite:///:memory:"}:
     from sqlalchemy.pool import StaticPool
 
     engine_options["poolclass"] = StaticPool
 engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-PRODUCT_IMAGE_DIR = Path("static/product-images")
+PRODUCT_IMAGE_DIR = Path(os.environ.get("PRODUCT_IMAGE_DIR", "static/product-images"))
 MAX_PRODUCT_IMAGE_SIZE = 10 * 1024 * 1024
 
 
@@ -321,10 +342,10 @@ def track_event(db: Session, request: Request, event_type: str, product_id: int 
 
 def seed_database():
     with SessionLocal.begin() as db:
-        if not db.query(User).filter_by(email="admin@allofus.com").first():
+        if not db.query(User).filter_by(email=ADMIN_EMAIL).first():
             db.add(User(
-                first_name="All of Us", last_name="Admin", email="admin@allofus.com",
-                password_hash=generate_password_hash("admin123"), role="admin",
+                first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
+                password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
             ))
         if db.query(Product).count() == 0:
             db.add_all([
@@ -362,6 +383,13 @@ def migrate_page_content():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    PRODUCT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    bundled_images = Path("static/product-images")
+    if bundled_images.exists() and bundled_images.resolve() != PRODUCT_IMAGE_DIR.resolve():
+        for source in bundled_images.iterdir():
+            destination = PRODUCT_IMAGE_DIR / source.name
+            if source.is_file() and not destination.exists():
+                shutil.copy2(source, destination)
     Base.metadata.create_all(engine)
     migrate_catalog_schema()
     migrate_page_content()
@@ -372,10 +400,11 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="All of Us", lifespan=lifespan)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.environ.get("SECRET_KEY", "local-development-key-change-me"),
+    secret_key=SECRET_KEY,
     same_site="lax",
-    https_only=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
+    https_only=IS_PRODUCTION or os.environ.get("COOKIE_SECURE", "false").lower() == "true",
 )
+app.mount("/static/product-images", StaticFiles(directory=str(PRODUCT_IMAGE_DIR), check_dir=False), name="product_images")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -431,6 +460,16 @@ templates = Jinja2Templates(directory="templates", context_processors=[template_
 def get_db():
     with SessionLocal() as db:
         yield db
+
+
+@app.get("/healthz", include_in_schema=False)
+def health_check():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail="Database unavailable") from None
+    return {"status": "ok"}
 
 
 def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]):
