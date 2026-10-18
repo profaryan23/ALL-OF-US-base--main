@@ -23,6 +23,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash, generate_password_hash
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///allofus.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 engine_options = {"connect_args": {"check_same_thread": False}} if DATABASE_URL.startswith("sqlite") else {}
 if DATABASE_URL in {"sqlite://", "sqlite:///:memory:"}:
     from sqlalchemy.pool import StaticPool
