@@ -1,0 +1,46 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Edit {{ content.page_key }}{% endblock %}
+{% block module_heading %}Edit {{ content.page_key }} page{% endblock %}
+{% block module_content %}
+<section class="admin-section module-section">
+  <div class="admin-section-head"><div><p class="eyebrow">Page editor</p><h2>{{ content.page_key.title() }} content.</h2></div>
+    {% if content.page_key == 'home' %}<a class="back-link" href="{{ url_for('storefront') }}">Preview ↗</a>
+    {% elif content.published and content.page_key == 'about' %}<a class="back-link" href="{{ url_for('about_page') }}">Preview ↗</a>
+    {% elif content.published %}<a class="back-link" href="{{ url_for('contact_page') }}">Preview ↗</a>
+    {% else %}<span class="content-status">Not public</span>{% endif %}
+  </div>
+  <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key=content.page_key) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="content-editor-grid">
+      <label><span>{% if content.page_key == 'home' %}Hero eyebrow{% else %}Page eyebrow{% endif %}</span><input name="hero_eyebrow" value="{{ content.hero_eyebrow }}" maxlength="100" required></label>
+      <label class="content-field-wide"><span>{% if content.page_key == 'home' %}Hero headline{% else %}Page heading{% endif %}</span><textarea name="hero_heading" rows="3" maxlength="240" required>{{ content.hero_heading }}</textarea><small>For a multi-line home headline, put each line on a new line.</small></label>
+      <label class="content-field-wide"><span>{% if content.page_key == 'home' %}Hero introduction{% else %}Introduction{% endif %}</span><textarea name="hero_intro" rows="3" maxlength="2000">{{ content.hero_intro }}</textarea></label>
+      <label><span>Button label</span><input name="hero_cta_label" value="{{ content.hero_cta_label }}" maxlength="80"></label>
+      <label><span>Button link (site path or #anchor)</span><input name="hero_cta_url" value="{{ content.hero_cta_url }}" maxlength="200" placeholder="/shop"></label>
+      {% if content.page_key == 'home' %}
+      <label class="content-field-wide"><span>Site announcement</span><input name="site_announcement" value="{{ content.site_announcement }}" maxlength="240"></label>
+      <label><span>Video caption</span><input name="hero_video_caption" value="{{ content.hero_video_caption }}" maxlength="120"></label>
+      <label><span>Footer tagline</span><input name="footer_tagline" value="{{ content.footer_tagline }}" maxlength="240"></label>
+      <label><span>Shop section eyebrow</span><input name="section_eyebrow" value="{{ content.section_eyebrow }}" maxlength="100"></label>
+      <label><span>Shop section heading</span><input name="section_heading" value="{{ content.section_heading }}" maxlength="240"></label>
+      <label class="content-field-wide"><span>Closing heading</span><textarea name="closing_heading" rows="2" maxlength="240">{{ content.closing_heading }}</textarea></label>
+      <label class="content-field-wide"><span>Closing note</span><textarea name="closing_copy" rows="2" maxlength="2000">{{ content.closing_copy }}</textarea></label>
+      {% else %}
+      <input type="hidden" name="site_announcement" value="{{ content.site_announcement }}">
+      <input type="hidden" name="hero_video_caption" value="{{ content.hero_video_caption }}">
+      <input type="hidden" name="footer_tagline" value="{{ content.footer_tagline }}">
+      <input type="hidden" name="closing_heading" value="{{ content.closing_heading }}">
+      <input type="hidden" name="closing_copy" value="{{ content.closing_copy }}">
+      <label><span>Section eyebrow</span><input name="section_eyebrow" value="{{ content.section_eyebrow }}" maxlength="100"></label>
+      <label><span>Section heading</span><input name="section_heading" value="{{ content.section_heading }}" maxlength="240"></label>
+      <label class="content-field-wide"><span>Page content</span><textarea name="body" rows="9" maxlength="10000">{{ content.body }}</textarea><small>Plain text only; blank lines separate paragraphs.</small></label>
+      {% endif %}
+      <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ content.meta_description }}</textarea><small>Keep this concise; maximum 320 characters.</small></label>
+      {% if content.page_key != 'home' %}
+      <label class="content-publish"><input type="checkbox" name="published" {% if content.published %}checked{% endif %}><span>Publish this page</span></label>
+      {% else %}<p class="content-publish-note">The home page stays published so the storefront remains available.</p>{% endif %}
+    </div>
+    <div class="content-editor-actions"><a class="back-link" href="{{ url_for('admin_content') }}">Cancel</a><button class="save-button" type="submit">Save page</button></div>
+  </form>
+</section>
+{% endblock %}

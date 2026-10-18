@@ -1,0 +1,49 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Inventory{% endblock %}
+{% block module_heading %}Inventory{% endblock %}
+{% block module_content %}
+<section class="admin-section module-section">
+  <div class="admin-section-head"><div><p class="eyebrow">Catalog controls</p><h2>Product inventory</h2></div><span class="product-count">{{ products|length }} items</span></div>
+  <form method="post" action="{{ url_for('create_product') }}" class="product-editor-card" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="product-editor-heading"><div><p class="eyebrow">New shop product</p><h3>Add a product</h3></div></div>
+    <div class="product-editor-grid">
+      <label><span>Product name</span><input name="name" required maxlength="140" placeholder="A very good thing"></label>
+      <label><span>Category</span><input name="category" required maxlength="100" placeholder="Accessories"></label>
+      <label><span>Shop category</span><input name="shop_category" required maxlength="100" placeholder="New arrivals"></label>
+      <label><span>Price</span><input name="price" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
+      <label><span>Stock quantity</span><input name="stock_quantity" type="number" min="0" required placeholder="0"></label>
+      <label><span>Photo (JPEG, PNG, or WebP; max 10 MB)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+      <label class="product-editor-wide"><span>Size variations</span><input name="size_variations" maxlength="1000" placeholder="Small, Medium, Large"><small>Separate available sizes with commas. Leave blank for products without sizes.</small></label>
+      <label class="product-editor-wide"><span>Description</span><textarea name="description" rows="3" maxlength="3000" placeholder="A few words about this product"></textarea></label>
+      <label class="active-toggle"><input type="checkbox" name="is_active" checked> Active in shop</label>
+    </div>
+    <button class="button button-dark" type="submit">Add product to shop <span>+</span></button>
+  </form>
+
+  <div class="inventory-list">
+    {% for product in products %}
+    <form method="post" action="{{ url_for('update_product', product_id=product.id) }}" class="product-editor-card inventory-edit-card" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="product-editor-heading">
+        <div><p class="eyebrow">Product #{{ product.id }}</p><h3>{{ product.name }}</h3><small>{{ 'Visible in shop' if product.is_active and product.stock_quantity > 0 else 'Hidden from shop' }}</small></div>
+        {% if product.photo_path %}<img class="inventory-photo-preview" src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}">{% else %}<span class="inventory-photo-empty">No photo</span>{% endif %}
+      </div>
+      <div class="product-editor-grid">
+        <label><span>Product name</span><input name="name" value="{{ product.name }}" required maxlength="140"></label>
+        <label><span>Category</span><input name="category" value="{{ product.category }}" required maxlength="100"></label>
+        <label><span>Shop category</span><input name="shop_category" value="{{ product.shop_category }}" required maxlength="100"></label>
+        <label><span>Price</span><input name="price" type="number" min="0.01" step="0.01" value="{{ '%.2f'|format(product.price) }}" required></label>
+        <label><span>Stock quantity</span><input name="stock_quantity" type="number" min="0" value="{{ product.stock_quantity }}" required></label>
+        <label><span>Replace photo (JPEG, PNG, or WebP; max 10 MB)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+        {% if product.photo_path %}<label class="active-toggle"><input type="checkbox" name="remove_photo"> Remove current photo</label>{% endif %}
+        <label class="product-editor-wide"><span>Size variations</span><input name="size_variations" value="{{ product.size_variations }}" maxlength="1000" placeholder="Small, Medium, Large"><small>Separate available sizes with commas.</small></label>
+        <label class="product-editor-wide"><span>Description</span><textarea name="description" rows="3" maxlength="3000">{{ product.description }}</textarea></label>
+        <label class="active-toggle"><input type="checkbox" name="is_active" {% if product.is_active %}checked{% endif %}> Active in shop</label>
+      </div>
+      <button class="save-button" type="submit">Save product ↗</button>
+    </form>
+    {% else %}<p class="table-empty">No products yet. Add your first item above.</p>{% endfor %}
+  </div>
+</section>
+{% endblock %}

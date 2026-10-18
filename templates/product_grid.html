@@ -1,0 +1,21 @@
+{% for product in products %}
+<article class="product-card">
+  <a class="product-card-link" href="{{ url_for('product_detail', product_id=product.id) }}" aria-label="View {{ product.name }} details">
+    <div class="product-image product-image-{{ loop.index0 % 4 }}">
+      {% if product.photo_path %}<img class="product-photo" src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" loading="lazy">{% else %}<span class="product-object object-{{ loop.index0 % 4 }}"><i></i></span>{% endif %}
+      <span class="product-index">{{ product.category }}</span>
+      <span class="image-label">{{ product.shop_category }}</span>
+    </div>
+  </a>
+  <div class="product-info">
+    <div>
+      <span class="product-category">{{ product.category }}</span>
+      <h3><a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.name }}</a></h3>
+      <p>{{ product.description }}</p>
+      {% if product.stock_quantity == 0 %}<span class="product-stock-status">Sold out</span>{% endif %}
+    </div>
+    <span class="price">${{ '%.2f'|format(product.price) }}</span>
+  </div>
+  <a class="add-button product-details-link" href="{{ url_for('product_detail', product_id=product.id) }}">View product details <span aria-hidden="true">↗</span></a>
+</article>
+{% endfor %}

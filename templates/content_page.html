@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ content.hero_heading }}{% endblock %}
+{% block meta_description %}{{ content.meta_description }}{% endblock %}
+{% block content %}
+<section class="content-page-hero">
+  <p class="eyebrow">{{ content.hero_eyebrow }}</p>
+  <h1>{{ content.hero_heading }}</h1>
+  <p class="content-page-intro">{{ content.hero_intro }}</p>
+  {% if content.hero_cta_label %}<a class="button button-dark" href="{{ content.hero_cta_url }}">{{ content.hero_cta_label }} <span aria-hidden="true">↘</span></a>{% endif %}
+</section>
+<section class="content-page-body">
+  <p class="eyebrow">{{ content.section_eyebrow }}</p>
+  <h2>{{ content.section_heading }}</h2>
+  <div class="content-prose">{{ content.body }}</div>
+</section>
+{% endblock %}

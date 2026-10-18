@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{% block module_title %}Studio{% endblock %} · Studio · All of Us{% endblock %}
+{% block content %}
+<section class="admin-shell">
+  <div class="admin-top"><div><p class="eyebrow">All of Us / Back office</p><h1>{% block module_heading %}Studio{% endblock %}<span class="heading-period">.</span></h1></div><a class="back-link" href="{{ url_for('storefront') }}">View storefront ↗</a></div>
+  <nav class="module-nav" aria-label="Management modules">
+    <a href="{{ url_for('admin_dashboard') }}">Overview</a>
+    <a href="{{ url_for('admin_content') }}">Content</a>
+    <a href="{{ url_for('admin_crm') }}">CRM</a>
+    <a href="{{ url_for('admin_inventory') }}">Inventory</a>
+    <a href="{{ url_for('admin_sales') }}">Sales</a>
+    <a href="{{ url_for('admin_orders') }}">Orders</a>
+    <a href="{{ url_for('admin_analytics') }}">Website analytics</a>
+    <a href="{{ url_for('admin_reports') }}">Reports</a>
+  </nav>
+  {% block module_content %}{% endblock %}
+</section>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}{{ home_page.hero_heading.replace('\n', ' ') }}{% endblock %}
+{% block meta_description %}{{ home_page.meta_description }}{% endblock %}
+{% block content %}
+<section class="hero hero-video">
+  <video class="hero-background-video" autoplay muted loop playsinline preload="metadata" aria-label="A short film introducing All of Us">
+    <source src="{{ url_for('static', filename='videos/shop-hero-540p.mp4') }}" type="video/mp4">
+    Your browser does not support embedded video.
+  </video>
+  <div class="hero-video-scrim" aria-hidden="true"></div>
+  <div class="hero-copy hero-glass">
+    <p class="eyebrow">{{ home_page.hero_eyebrow }}</p>
+    {% set headline_lines = home_page.hero_heading.split('\n') %}
+    <h1>{% for line in headline_lines[:-1] %}{{ line }}<br>{% endfor %}<em>{{ headline_lines[-1] }}</em></h1>
+    <p class="hero-intro">{{ home_page.hero_intro }}</p>
+    {% if home_page.hero_cta_label %}<a class="button button-dark" href="{{ home_page.hero_cta_url }}">{{ home_page.hero_cta_label }} <span aria-hidden="true">↘</span></a>{% endif %}
+  </div>
+  <button class="hero-video-toggle" type="button" aria-pressed="false">Pause film</button>
+  <span class="hero-video-caption">{{ home_page.hero_video_caption }}</span>
+</section>
+<section class="shop-section home-featured" id="shop">
+  <div class="section-heading">
+    <div><p class="eyebrow">{{ home_page.section_eyebrow }}</p><h2>{{ home_page.section_heading }}</h2></div>
+    <a class="back-link" href="{{ url_for('shop_page') }}">Shop the full collection ↗</a>
+  </div>
+  {% if products %}<div class="product-grid" id="shop-products">{% include "product_grid.html" %}</div>{% else %}<p class="empty-state">The shelves are being restocked. Check back soon.</p>{% endif %}
+</section>
+<section class="closing-band"><span class="closing-mark">&</span><p>{{ home_page.closing_heading }}</p><span class="closing-note">{{ home_page.closing_copy }}</span></section>
+{% endblock %}

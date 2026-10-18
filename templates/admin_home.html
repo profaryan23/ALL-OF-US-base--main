@@ -1,0 +1,14 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Overview{% endblock %}{% block module_heading %}The studio{% endblock %}
+{% block module_content %}
+<section class="metrics-grid overview-metrics"><article class="metric metric-dark"><span>Customers</span><strong>{{ customer_count }}</strong><small>Registered accounts</small></article><article class="metric metric-mid"><span>Products</span><strong>{{ product_count }}</strong><small>{{ low_stock_count }} at or below 5 units</small></article><article class="metric metric-light"><span>Orders</span><strong>{{ order_count }}</strong><small>{{ order_status_counts['Pending'] }} pending · {{ order_status_counts['Processing'] }} processing</small></article><article class="metric metric-dark"><span>Net sales</span><strong>${{ '%.2f'|format(revenue) }}</strong><small>Cancelled orders excluded</small></article></section>
+<div class="module-grid">
+  <a class="module-card" href="{{ url_for('admin_content') }}"><span class="module-number">01</span><div><h2>Content management</h2><p>Edit home, About, and Contact page content, page descriptions, publishing status, and visitor messages.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_crm') }}"><span class="module-number">02</span><div><h2>CRM</h2><p>Customer profiles, consent, spend history, and export.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_inventory') }}"><span class="module-number">03</span><div><h2>Inventory management</h2><p>Catalog details, pricing, stock, and storefront availability.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_sales') }}"><span class="module-number">04</span><div><h2>Sales management</h2><p>Revenue trends, average order value, and best-selling products.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_orders') }}"><span class="module-number">05</span><div><h2>Order management</h2><p>Fulfillment pipeline, customer shipment and exchange requests.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_analytics') }}"><span class="module-number">06</span><div><h2>Website analytics</h2><p>Visits, cart activity, conversion, and local technical SEO checks.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_reports') }}"><span class="module-number">07</span><div><h2>Reports</h2><p>Combined sales, order, customer, inventory, and web activity snapshot.</p></div><span class="module-arrow">↗</span></a>
+</div>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Content{% endblock %}
+{% block module_heading %}Content studio{% endblock %}
+{% block module_content %}
+<section class="admin-section module-section">
+  <div class="admin-section-head"><div><p class="eyebrow">Website pages</p><h2>Manage your pages.</h2></div><p class="content-help">Edit copy, page descriptions, and publishing status. Changes appear on the live site when saved.</p></div>
+  <div class="content-page-list">
+    {% for item in pages %}
+    <article class="content-page-card">
+      <div><p class="eyebrow">{{ item.page_key }}</p><h3>{{ item.hero_heading.replace('\n', ' ') }}</h3><p>{{ item.meta_description }}</p></div>
+      <div class="content-page-actions">
+        {% if item.page_key == 'home' %}<span class="content-status content-status-live">Always live</span>
+        {% elif item.published %}<span class="content-status content-status-live">Published</span>
+        {% else %}<span class="content-status">Draft</span>{% endif %}
+        {% if item.page_key == 'home' %}<a class="back-link" href="{{ url_for('storefront') }}">Preview ↗</a>
+        {% elif item.published and item.page_key == 'about' %}<a class="back-link" href="{{ url_for('about_page') }}">Preview ↗</a>
+        {% elif item.published %}<a class="back-link" href="{{ url_for('contact_page') }}">Preview ↗</a>
+        {% else %}<span class="content-status">Not public</span>{% endif %}
+        <a class="save-button" href="{{ url_for('admin_content_edit', page_key=item.page_key) }}">Edit page</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="admin-section content-inbox">
+  <div class="admin-section-head"><div><p class="eyebrow">Contact form inbox</p><h2>Messages from visitors.</h2></div><span class="content-unread">{{ unread_count }} unread</span></div>
+  {% if messages %}
+  <div class="content-message-list">
+    {% for message in messages %}
+    <article class="content-message{% if not message.is_read %} content-message-unread{% endif %}">
+      <div class="content-message-head"><div><strong>{{ message.subject }}</strong><span>{{ message.name }} · <a href="mailto:{{ message.email }}">{{ message.email }}</a></span></div><time>{{ message.created_at.strftime('%b %d, %Y · %H:%M') }} UTC</time></div>
+      <p>{{ message.message }}</p>
+      <form method="post" action="{{ url_for('update_contact_message', message_id=message.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="status" value="{% if message.is_read %}unread{% else %}read{% endif %}">
+        <button class="text-button" type="submit">Mark as {% if message.is_read %}unread{% else %}read{% endif %}</button>
+      </form>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}<p class="table-empty">No contact messages yet.</p>{% endif %}
+  <p class="report-note">Messages are saved here; email delivery and reply tracking are not configured.</p>
+</section>
+{% endblock %}
