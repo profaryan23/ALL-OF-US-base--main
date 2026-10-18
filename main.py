@@ -3,10 +3,12 @@ from __future__ import annotations
 import csv
 import hmac
 import io
+import logging
 import os
 import re
 import secrets
 import shutil
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -24,18 +26,18 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash, generate_password_hash
 
+logger = logging.getLogger(__name__)
+
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
 SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-key-change-me")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@allofus.com").strip().lower()
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "" if IS_PRODUCTION else "admin@allofus.com").strip().lower()
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "" if IS_PRODUCTION else "admin123")
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///allofus.db")
 if IS_PRODUCTION:
     if not DATABASE_URL.startswith(("postgres://", "postgresql://", "postgresql+psycopg2://")):
         raise RuntimeError("Production requires a PostgreSQL DATABASE_URL.")
     if SECRET_KEY == "local-development-key-change-me" or len(SECRET_KEY) < 32:
         raise RuntimeError("Set SECRET_KEY to a random value of at least 32 characters.")
-    if not ADMIN_EMAIL or ADMIN_PASSWORD == "admin123" or len(ADMIN_PASSWORD) < 16:
-        raise RuntimeError("Set ADMIN_EMAIL and a unique ADMIN_PASSWORD of at least 16 characters.")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
 elif DATABASE_URL.startswith("postgresql://"):
@@ -58,6 +60,34 @@ engine = create_engine(DATABASE_URL, **engine_options)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 PRODUCT_IMAGE_DIR = Path(os.environ.get("PRODUCT_IMAGE_DIR", "static/product-images"))
 MAX_PRODUCT_IMAGE_SIZE = 10 * 1024 * 1024
+
+
+def initialize_product_image_directory():
+    global PRODUCT_IMAGE_DIR
+
+    try:
+        PRODUCT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+        # An existing directory may still be unwritable (for example, without a disk).
+        with tempfile.TemporaryFile(dir=PRODUCT_IMAGE_DIR) as probe:
+            probe.write(b"storage-check")
+            probe.flush()
+    except (PermissionError, FileNotFoundError):
+        fallback = Path.cwd() / "product-images"
+        logger.warning(
+            "Product image storage at %s is unavailable; falling back to %s. "
+            "Local uploads are ephemeral and may be lost on redeploy or restart.",
+            PRODUCT_IMAGE_DIR, fallback,
+        )
+        fallback.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryFile(dir=fallback) as probe:
+            probe.write(b"storage-check")
+            probe.flush()
+        PRODUCT_IMAGE_DIR = fallback
+
+    # StaticFiles was mounted before lifespan startup; serve the selected directory.
+    product_image_files.directory = str(PRODUCT_IMAGE_DIR)
+    product_image_files.all_directories = [str(PRODUCT_IMAGE_DIR)]
+    product_image_files.config_checked = False
 
 
 def product_sizes(product: Product) -> list[str]:
@@ -344,8 +374,16 @@ def track_event(db: Session, request: Request, event_type: str, product_id: int 
 
 
 def seed_database():
+    admin_credentials_valid = bool(ADMIN_EMAIL and ADMIN_PASSWORD)
+    if IS_PRODUCTION:
+        admin_credentials_valid = admin_credentials_valid and ADMIN_PASSWORD != "admin123" and len(ADMIN_PASSWORD) >= 16
+    if not admin_credentials_valid:
+        logger.warning(
+            "Skipping admin seeding: set ADMIN_EMAIL and a unique ADMIN_PASSWORD "
+            "of at least 16 characters in production. Existing accounts are unchanged."
+        )
     with SessionLocal.begin() as db:
-        if not db.query(User).filter_by(email=ADMIN_EMAIL).first():
+        if admin_credentials_valid and not db.query(User).filter_by(email=ADMIN_EMAIL).first():
             db.add(User(
                 first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
                 password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
@@ -386,7 +424,7 @@ def migrate_page_content():
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    PRODUCT_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
+    initialize_product_image_directory()
     bundled_images = Path("static/product-images")
     if bundled_images.exists() and bundled_images.resolve() != PRODUCT_IMAGE_DIR.resolve():
         for source in bundled_images.iterdir():
@@ -407,7 +445,8 @@ app.add_middleware(
     same_site="lax",
     https_only=IS_PRODUCTION or os.environ.get("COOKIE_SECURE", "false").lower() == "true",
 )
-app.mount("/static/product-images", StaticFiles(directory=str(PRODUCT_IMAGE_DIR), check_dir=False), name="product_images")
+product_image_files = StaticFiles(directory=str(PRODUCT_IMAGE_DIR), check_dir=False)
+app.mount("/static/product-images", product_image_files, name="product_images")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

@@ -130,6 +130,10 @@ through Render's proxy; do not reuse that wildcard on a directly exposed server.
 - Admin environment variables create an account only if that email is absent.
   Changing `ADMIN_PASSWORD` later does **not** reset an existing account. Never
   import an account that still uses the demo password into production.
+  Missing/empty admin credentials or a production password shorter than 16
+  characters skip admin seeding with a warning rather than preventing startup.
+  Production never falls back to the local demo credentials. Configure valid
+  credentials and restart to create the initial admin account.
 - A persistent disk supports one instance and prevents zero-downtime deploys.
   Keep this deployment to one instance/worker. For a free Render instance or
   horizontal scaling, implement Supabase Storage uploads first; this code does
@@ -157,11 +161,17 @@ through Render's proxy; do not reuse that wildcard on a directly exposed server.
   deploy** option. An explicitly configured URL should use `postgresql+psycopg2://`,
   not `postgresql+psycopg://` (which requires a different package).
 - **Startup rejects production settings:** supply all required secrets; short
-  session/admin secrets and SQLite production URLs are intentionally rejected.
+  session secrets and SQLite production URLs are intentionally rejected. Invalid
+  admin credentials only skip admin seeding with a warning.
 - **Login loops or HTTP asset URLs:** use the HTTPS site and the documented proxy
   flags; keep secure cookies enabled in production.
 - **Photos disappear:** confirm the disk is mounted at `/var/data` and
   `PRODUCT_IMAGE_DIR=/var/data/product-images`; only disk-backed files persist.
+  If directory creation or the startup write check raises `PermissionError` or
+  `FileNotFoundError`, the app warns and uses `./product-images` instead. Uploads
+  are still served normally, but this fallback is ephemeral on Render and may be
+  lost on restart or redeploy. The fallback must itself be writable; database
+  connectivity and other startup errors are not suppressed.
 
 References: [Render FastAPI](https://render.com/docs/deploy-fastapi),
 [Render disks](https://render.com/docs/disks),

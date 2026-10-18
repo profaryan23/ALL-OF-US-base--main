@@ -16,7 +16,10 @@ os.environ["ADMIN_PASSWORD"] = "test-admin-password-unique"
 os.environ["COOKIE_SECURE"] = "false"
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 import main
 
@@ -70,6 +73,94 @@ class DeploymentTests(unittest.TestCase):
             if image.is_file():
                 self.assertEqual((main.PRODUCT_IMAGE_DIR / image.name).read_bytes(), image.read_bytes())
 
+    def test_storage_fallback_starts_and_serves_uploads(self):
+        original_directory = main.PRODUCT_IMAGE_DIR
+        original_mkdir = Path.mkdir
+        original_temporary_file = main.tempfile.TemporaryFile
+        try:
+            for failure_stage, error in (
+                ("mkdir", PermissionError),
+                ("mkdir", FileNotFoundError),
+                ("write", PermissionError),
+                ("write", FileNotFoundError),
+            ):
+                with self.subTest(stage=failure_stage, error=error), tempfile.TemporaryDirectory() as workspace:
+                    unavailable = Path(workspace) / "unavailable"
+                    fallback = Path(workspace) / "product-images"
+
+                    def mkdir(path, *args, **kwargs):
+                        if path == unavailable and failure_stage == "mkdir":
+                            raise error("Storage unavailable")
+                        return original_mkdir(path, *args, **kwargs)
+
+                    def temporary_file(*args, **kwargs):
+                        if kwargs.get("dir") == unavailable and failure_stage == "write":
+                            raise error("Storage unavailable")
+                        return original_temporary_file(*args, **kwargs)
+
+                    with (
+                        patch.object(main, "PRODUCT_IMAGE_DIR", unavailable),
+                        patch.object(Path, "cwd", return_value=Path(workspace)),
+                        patch.object(Path, "mkdir", mkdir),
+                        patch.object(main.tempfile, "TemporaryFile", temporary_file),
+                        self.assertLogs(main.logger, level="WARNING") as logs,
+                        TestClient(main.app) as client,
+                    ):
+                        self.assertEqual(main.PRODUCT_IMAGE_DIR, fallback)
+                        self.assertEqual(main.product_image_files.directory, str(fallback))
+                        self.assertEqual(client.get("/healthz").status_code, 200)
+                        content = b"\x89PNG\r\n\x1a\nfallback-image"
+                        image_path = main.save_product_image((".png", content))
+                        self.assertEqual(client.get(f"/static/{image_path}").content, content)
+                        self.assertTrue(any("ephemeral" in message for message in logs.output))
+        finally:
+            main.PRODUCT_IMAGE_DIR = original_directory
+            main.initialize_product_image_directory()
+
+    def test_invalid_production_admin_credentials_skip_seeding(self):
+        for email, password in (
+            ("", ""),
+            ("admin@example.com", ""),
+            ("", "long-unique-password"),
+            ("admin@example.com", "admin123"),
+            ("admin@example.com", "short"),
+        ):
+            with self.subTest(email=email, password=password):
+                engine = create_engine("sqlite://", poolclass=StaticPool, connect_args={"check_same_thread": False})
+                try:
+                    main.Base.metadata.create_all(engine)
+                    sessions = sessionmaker(bind=engine)
+                    with (
+                        patch.object(main, "IS_PRODUCTION", True),
+                        patch.object(main, "ADMIN_EMAIL", email),
+                        patch.object(main, "ADMIN_PASSWORD", password),
+                        patch.object(main, "SessionLocal", sessions),
+                        self.assertLogs(main.logger, level="WARNING") as logs,
+                    ):
+                        main.seed_database()
+                    with sessions() as db:
+                        self.assertEqual(db.query(main.User).count(), 0)
+                        self.assertGreater(db.query(main.Product).count(), 0)
+                        self.assertGreater(db.query(main.PageContent).count(), 0)
+                    self.assertIn("Skipping admin seeding", logs.output[0])
+                finally:
+                    engine.dispose()
+
+    def test_production_import_allows_missing_admin_credentials(self):
+        environment = dict(
+            os.environ,
+            APP_ENV="production",
+            DATABASE_URL="postgresql://postgres:unused@localhost/postgres",
+            SECRET_KEY="s" * 48,
+        )
+        environment.pop("ADMIN_EMAIL", None)
+        environment.pop("ADMIN_PASSWORD", None)
+        result = subprocess.run(
+            [sys.executable, "-c", "import main; assert main.ADMIN_EMAIL == ''; assert main.ADMIN_PASSWORD == ''"],
+            env=environment, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_production_rejects_sqlite(self):
         environment = dict(os.environ, APP_ENV="production")
         result = subprocess.run([sys.executable, "-c", "import main"], env=environment, capture_output=True, text=True)
@@ -111,7 +202,6 @@ class DeploymentTests(unittest.TestCase):
         )
         for overrides, expected in (
             ({"SECRET_KEY": "short"}, "Set SECRET_KEY"),
-            ({"ADMIN_PASSWORD": "admin123"}, "Set ADMIN_EMAIL"),
         ):
             with self.subTest(overrides=overrides):
                 result = subprocess.run(
