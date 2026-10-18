@@ -150,7 +150,12 @@ through Render's proxy; do not reuse that wildcard on a directly exposed server.
 - **Password authentication failed:** check the database password (not account
   password/API key), URL encoding, and full pooler username.
 - **Missing PostgreSQL driver:** ensure the deployed `requirements.txt` includes
-  `psycopg2-binary`, then rebuild.
+  `psycopg2-binary`. The app normalizes `postgres://` and `postgresql://` URLs to
+  `postgresql+psycopg2://` so SQLAlchemy uses that installed driver even when its
+  default changes. If the logs show `No module named 'psycopg'`, deploy the updated
+  `main.py` as well as `requirements.txt`, then use Render's **Clear build cache &
+  deploy** option. An explicitly configured URL should use `postgresql+psycopg2://`,
+  not `postgresql+psycopg://` (which requires a different package).
 - **Startup rejects production settings:** supply all required secrets; short
   session/admin secrets and SQLite production URLs are intentionally rejected.
 - **Login loops or HTTP asset URLs:** use the HTTPS site and the documented proxy

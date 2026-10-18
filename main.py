@@ -37,7 +37,10 @@ if IS_PRODUCTION:
     if not ADMIN_EMAIL or ADMIN_PASSWORD == "admin123" or len(ADMIN_PASSWORD) < 16:
         raise RuntimeError("Set ADMIN_EMAIL and a unique ADMIN_PASSWORD of at least 16 characters.")
 if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+psycopg2://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    # Match the installed psycopg2-binary driver, independent of SQLAlchemy defaults.
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 if DATABASE_URL.startswith("sqlite"):
     engine_options = {"connect_args": {"check_same_thread": False}}
 else:

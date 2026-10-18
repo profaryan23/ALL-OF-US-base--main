@@ -76,6 +76,32 @@ class DeploymentTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Production requires a PostgreSQL DATABASE_URL", result.stderr)
 
+    def test_postgresql_urls_use_installed_driver(self):
+        for scheme in ("postgres", "postgresql", "postgresql+psycopg2"):
+            with self.subTest(scheme=scheme):
+                environment = dict(
+                    os.environ,
+                    APP_ENV="production",
+                    DATABASE_URL=f"{scheme}://postgres:unused@localhost:5432/postgres?sslmode=require",
+                    SECRET_KEY="s" * 48,
+                )
+                result = subprocess.run(
+                    [sys.executable, "-c", (
+                        "import main; "
+                        "assert main.engine.url.drivername == 'postgresql+psycopg2'; "
+                        "assert main.engine.dialect.dbapi.__name__ == 'psycopg2'; "
+                        "assert main.engine.url.host == 'localhost'; "
+                        "assert main.engine.url.port == 5432; "
+                        "assert main.engine.url.database == 'postgres'; "
+                        "assert main.engine.url.query['sslmode'] == 'require'; "
+                        "main.engine.dispose()"
+                    )],
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_production_rejects_weak_secrets(self):
         base_environment = dict(
             os.environ,
