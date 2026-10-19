@@ -1,0 +1,75 @@
+{% extends "admin_base.html" %}
+{% block module_title %}New Product · Inventory{% endblock %}
+{% block module_heading %}Inventory{% endblock %}
+
+{% block module_content %}
+<section class="admin-section module-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Catalog controls</p>
+      <h2>Add a new product</h2>
+    </div>
+    <a href="{{ url_for('admin_inventory') }}" class="button button-outline">← Back to inventory</a>
+  </div>
+
+  {% if error %}
+    <div class="form-error" style="margin-bottom: 20px;">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('create_product') }}" class="product-editor-card" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="product-editor-heading">
+      <div>
+        <p class="eyebrow">New shop product</p>
+        <h3>Product specifications</h3>
+        <small>Fill in details below to publish directly or save as hidden.</small>
+      </div>
+    </div>
+    <div class="product-editor-grid">
+      <label>
+        <span>Product name *</span>
+        <input name="name" required maxlength="140" placeholder="e.g. Linen Everyday Tote" value="{{ form_data.get('name', '') }}">
+      </label>
+      <label>
+        <span>Category *</span>
+        <input name="category" required maxlength="100" placeholder="e.g. Accessories, Ceramics" value="{{ form_data.get('category', '') }}">
+      </label>
+      <label>
+        <span>Shop category *</span>
+        <input name="shop_category" required maxlength="100" placeholder="e.g. New arrivals, Essentials" value="{{ form_data.get('shop_category', '') }}">
+      </label>
+      <label>
+        <span>Price ($) *</span>
+        <input name="price" type="number" min="0.01" step="0.01" required placeholder="0.00" value="{{ form_data.get('price', '') }}">
+      </label>
+      <label>
+        <span>Stock quantity *</span>
+        <input name="stock_quantity" type="number" min="0" required placeholder="10" value="{{ form_data.get('stock_quantity', '') }}">
+      </label>
+      <label>
+        <span>Photo (JPEG, PNG, or WebP; max 10 MB)</span>
+        <input name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+      </label>
+      <label class="product-editor-wide">
+        <span>Size variations</span>
+        <input name="size_variations" maxlength="1000" placeholder="Small, Medium, Large" value="{{ form_data.get('size_variations', '') }}">
+        <small>Separate available sizes with commas. Leave blank for items without size variants.</small>
+      </label>
+      <label class="product-editor-wide">
+        <span>Description</span>
+        <textarea name="description" rows="3" maxlength="3000" placeholder="A few words about material, dimensions, and craftsmanship...">{{ form_data.get('description', '') }}</textarea>
+      </label>
+      <label class="active-toggle">
+        <input type="checkbox" name="is_active" {% if form_data.get('is_active') == 'on' or not form_data %}checked{% endif %}>
+        Active in shop (publish immediately)
+      </label>
+    </div>
+    <div class="form-actions-row" style="display: flex; gap: 10px; align-items: center;">
+      <button class="button button-dark" type="submit">Add product to shop <span>+</span></button>
+      <a href="{{ url_for('admin_inventory') }}" class="button button-outline">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

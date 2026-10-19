@@ -1,9 +1,331 @@
 {% extends "admin_base.html" %}
-{% block module_title %}Sales{% endblock %}{% block module_heading %}Sales{% endblock %}
+{% block module_title %}Sales{% endblock %}
+{% block module_heading %}Sales management{% endblock %}
+
 {% block module_content %}
-<section class="metrics-grid sales-metrics"><article class="metric metric-dark"><span>Net sales</span><strong>${{ '%.2f'|format(revenue) }}</strong><small>Excludes cancelled orders</small></article><article class="metric metric-mid"><span>Orders</span><strong>{{ order_count }}</strong><small>In selected period</small></article><article class="metric metric-light"><span>Average order</span><strong>${{ '%.2f'|format(average_order) }}</strong><small>Sales per order</small></article></section>
-{% if best_seller %}<section class="best-seller"><p class="eyebrow">Most purchased · MVP</p><div><h2>{{ best_seller.name }}</h2><strong>{{ best_seller.units }} units sold</strong></div><span>${{ '%.2f'|format(best_seller.revenue) }} revenue in this period</span></section>{% endif %}
-<section class="admin-section"><div class="admin-section-head"><div><p class="eyebrow">Revenue over time</p><h2>Sales activity</h2></div><form method="get" action="{{ url_for('admin_sales') }}" class="period-filter"><label for="period">Period</label><select id="period" name="period" onchange="this.form.submit()"><option value="7" {% if period == '7' %}selected{% endif %}>7 days</option><option value="30" {% if period == '30' %}selected{% endif %}>30 days</option><option value="90" {% if period == '90' %}selected{% endif %}>90 days</option><option value="all" {% if period == 'all' %}selected{% endif %}>All time</option></select></form></div>
-<div class="sales-chart">{% for row in daily_sales %}<div class="sales-bar"><span>${{ '%.2f'|format(row.amount) }}</span><i style="height:{{ (row.amount / max_daily * 100)|int if max_daily else 0 }}%"></i><small>{{ row.day }}</small></div>{% else %}<p class="table-empty">No sales in this period.</p>{% endfor %}</div></section>
-<section class="admin-section"><div class="admin-section-head"><div><p class="eyebrow">What customers are buying</p><h2>Sales by product</h2><p class="report-note">Ranked by units in non-cancelled orders; revenue is shown separately. “MVP” means the most-purchased product in this period.</p></div></div><div class="table-wrap"><table><thead><tr><th>Product</th><th>Units sold</th><th>Sales</th></tr></thead><tbody>{% for item in product_sales %}<tr><td class="customer-name">{{ item.name }}</td><td>{{ item.units }}</td><td>${{ '%.2f'|format(item.revenue) }}</td></tr>{% else %}<tr><td colspan="3" class="table-empty">No recorded sales in this period.</td></tr>{% endfor %}</tbody></table></div></section>
+<!-- Metrics Grid: Net Sales, In-store vs Online, Orders, Average Order -->
+<section class="metrics-grid sales-metrics">
+  <article class="metric metric-dark">
+    <span>Net sales</span>
+    <strong>${{ '%.2f'|format(revenue) }}</strong>
+    <small>{{ order_count }} total orders</small>
+  </article>
+  <article class="metric metric-mid">
+    <span>🏪 In-store sales</span>
+    <strong>${{ '%.2f'|format(store_revenue) }}</strong>
+    <small>{{ store_orders_count }} store transactions</small>
+  </article>
+  <article class="metric metric-light">
+    <span>🚚 Online delivery</span>
+    <strong>${{ '%.2f'|format(online_revenue) }}</strong>
+    <small>{{ online_orders_count }} delivery orders</small>
+  </article>
+  <article class="metric metric-dark">
+    <span>Average order</span>
+    <strong>${{ '%.2f'|format(average_order) }}</strong>
+    <small>Revenue per transaction</small>
+  </article>
+</section>
+
+<!-- Action Header: Period Filter & + Record Sale Button -->
+<section class="admin-section" style="padding-top: 15px;">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Sales operations</p>
+      <h2>Transactions & revenue</h2>
+    </div>
+    <div class="sales-head-actions">
+      <form method="get" action="{{ url_for('admin_sales') }}" class="period-filter">
+        <label for="period">Period</label>
+        <select id="period" name="period" onchange="this.form.submit()">
+          <option value="7" {% if period == '7' %}selected{% endif %}>7 days</option>
+          <option value="30" {% if period == '30' %}selected{% endif %}>30 days</option>
+          <option value="90" {% if period == '90' %}selected{% endif %}>90 days</option>
+          <option value="all" {% if period == 'all' %}selected{% endif %}>All time</option>
+        </select>
+      </form>
+      <button type="button" id="btn-open-sale-form" class="button button-dark open-sale-btn">
+        <span class="plus-icon">+</span> Record New Sale
+      </button>
+    </div>
+  </div>
+
+  <!-- Collapsible Record Sale Form Panel -->
+  <div id="record-sale-panel" class="record-sale-container" style="display: none;">
+    <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="product-editor-heading">
+        <div>
+          <p class="eyebrow">Sales & CRM Entry</p>
+          <h3>Record a product sale</h3>
+          <small>Enter products sold in-store or for online delivery. Verify and store customer details directly into CRM.</small>
+        </div>
+        <button type="button" class="button button-outline button-sm" id="btn-close-sale-panel">✕ Close</button>
+      </div>
+
+      <!-- Channel Selection -->
+      <div class="sale-channel-selector">
+        <span class="channel-label">Sales Channel / Fulfillment *</span>
+        <div class="channel-options">
+          <label class="channel-option-card">
+            <input type="radio" name="channel" value="In-store" checked>
+            <div class="channel-card-content">
+              <strong>🏪 In-store purchase</strong>
+              <small>Sold directly at the store or studio pickup</small>
+            </div>
+          </label>
+          <label class="channel-option-card">
+            <input type="radio" name="channel" value="Online delivery">
+            <div class="channel-card-content">
+              <strong>🚚 Online delivery</strong>
+              <small>Ordered for delivery or courier shipping</small>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Product & Quantity Grid -->
+      <div class="product-editor-grid" style="margin-top: 16px;">
+        <label class="product-editor-wide">
+          <span>Select Product *</span>
+          <select name="product_id" id="sale-product-select" required>
+            <option value="" disabled selected>Choose a product from inventory...</option>
+            {% for prod in all_products %}
+              <option value="{{ prod.id }}" data-price="{{ '%.2f'|format(prod.price) }}" data-sizes="{{ prod.size_variations }}" data-stock="{{ prod.stock_quantity }}">
+                {{ prod.name }} — ${{ '%.2f'|format(prod.price) }} ({{ prod.stock_quantity }} units in stock)
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          <span>Quantity *</span>
+          <input type="number" name="quantity" id="sale-quantity-input" min="1" value="1" required>
+        </label>
+        <label>
+          <span>Unit Price ($) *</span>
+          <input type="number" name="price" id="sale-price-input" min="0.01" step="0.01" placeholder="0.00" required>
+        </label>
+        <label>
+          <span>Size / Variant</span>
+          <input name="size_variation" id="sale-size-input" maxlength="80" placeholder="e.g. Medium (optional)">
+        </label>
+        <label>
+          <span>Order Status</span>
+          <select name="status">
+            <option value="Completed" selected>Completed (Fulfilled)</option>
+            <option value="Processing">Processing</option>
+            <option value="Pending">Pending</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Live Calculation Box -->
+      <div class="sale-total-box">
+        <span>Estimated Sale Total:</span>
+        <strong id="sale-total-display">$0.00</strong>
+      </div>
+
+      <!-- Customer Verification & CRM Section -->
+      <div class="sale-customer-section">
+        <div class="customer-section-head">
+          <p class="eyebrow" style="margin: 0;">Customer Verification & CRM Persistence</p>
+          <small>Verify customer identity or register new contact to store in CRM</small>
+        </div>
+
+        <div class="customer-toggle-row">
+          <label class="radio-label">
+            <input type="radio" name="customer_type" value="existing" id="radio-cust-existing">
+            <span>Verify existing CRM customer</span>
+          </label>
+          <label class="radio-label">
+            <input type="radio" name="customer_type" value="new" id="radio-cust-new" checked>
+            <span>Register new customer in CRM</span>
+          </label>
+        </div>
+
+        <!-- Existing Customer Select -->
+        <div id="existing-customer-block" style="display: none; margin-top: 10px;">
+          <label style="display: grid; gap: 5px; font-size: 9px;">
+            <span>Choose customer from CRM book:</span>
+            <select name="existing_user_id" id="existing-user-select" style="height: 36px; padding: 0 8px; font-size: 10px;">
+              <option value="">Select a registered customer...</option>
+              {% for cust in all_customers %}
+                <option value="{{ cust.id }}" data-email="{{ cust.email }}" data-phone="{{ cust.phone }}" data-name="{{ cust.first_name }} {{ cust.last_name }}">
+                  {{ cust.first_name }} {{ cust.last_name }} — {{ cust.email }} {% if cust.phone %}({{ cust.phone }}){% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+
+        <!-- New Customer Fields -->
+        <div id="new-customer-block" class="product-editor-grid" style="margin-top: 10px;">
+          <label>
+            <span>First Name</span>
+            <input name="first_name" id="cust-first-name" placeholder="First name">
+          </label>
+          <label>
+            <span>Last Name</span>
+            <input name="last_name" id="cust-last-name" placeholder="Last name">
+          </label>
+          <label>
+            <span>Email Address</span>
+            <input name="email" id="cust-email" type="email" placeholder="customer@example.com">
+          </label>
+          <label>
+            <span>Phone Number</span>
+            <input name="phone" id="cust-phone" type="tel" placeholder="+1 555-0199">
+          </label>
+          <label class="active-toggle" style="grid-column: 1/-1;">
+            <input type="checkbox" name="marketing_opt_in" checked>
+            Marketing communications consent (opt-in)
+          </label>
+        </div>
+
+        <div class="crm-badge-note">
+          <span class="crm-check-icon">✓</span>
+          <span>Order amount, purchased product, and customer profile will be permanently updated in the CRM directory.</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="form-actions-bar" style="margin-top: 16px;">
+        <button class="button button-dark" type="submit">Record sale & store in CRM ↗</button>
+        <button type="button" class="button button-outline" id="btn-cancel-sale">Cancel</button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<!-- MVP Best Seller Highlight -->
+{% if best_seller %}
+<section class="best-seller">
+  <p class="eyebrow">Most purchased · MVP</p>
+  <div>
+    <h2>{{ best_seller.name }}</h2>
+    <strong>{{ best_seller.units }} units sold</strong>
+  </div>
+  <span>${{ '%.2f'|format(best_seller.revenue) }} revenue in this period</span>
+</section>
+{% endif %}
+
+<!-- Sales Activity Chart -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Revenue over time</p>
+      <h2>Sales activity</h2>
+    </div>
+  </div>
+  <div class="sales-chart">
+    {% for row in daily_sales %}
+      <div class="sales-bar">
+        <span>${{ '%.2f'|format(row.amount) }}</span>
+        <i style="height:{{ (row.amount / max_daily * 100)|int if max_daily else 0 }}%"></i>
+        <small>{{ row.day }}</small>
+      </div>
+    {% else %}
+      <p class="table-empty">No sales in this period.</p>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Recent Sales Transactions Log (with channel and verified customer) -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Transaction history & fulfillment</p>
+      <h2>Recent sales log</h2>
+    </div>
+    <span class="product-count">{{ orders|length }} transaction{{ 's' if orders|length != 1 else '' }}</span>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th>
+          <th>Date</th>
+          <th>Channel</th>
+          <th>Customer (CRM)</th>
+          <th>Items sold</th>
+          <th>Total</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr id="order-{{ order.id }}">
+          <td><strong>#{{ order.id }}</strong></td>
+          <td>{{ order.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
+          <td>
+            {% if order.channel == 'In-store' %}
+              <span class="badge-status status-active" style="background: #2b3a4a; color: #fff;">🏪 In-store</span>
+            {% else %}
+              <span class="badge-status status-live" style="background: #1b5e20; color: #fff;">🚚 Online delivery</span>
+            {% endif %}
+          </td>
+          <td class="customer-name">
+            <a href="{{ url_for('admin_crm') }}#customer-{{ order.user_id }}" title="View customer in CRM" style="color: inherit; text-decoration: underline;">
+              {{ order.user.first_name }} {{ order.user.last_name }} ↗
+            </a>
+            <small>{{ order.user.email }}{% if order.user.phone %} · {{ order.user.phone }}{% endif %}</small>
+          </td>
+          <td>
+            {% for item in order.items %}
+              <div>{{ item.quantity }}x {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}</div>
+            {% else %}
+              <span style="color: #999;">No items</span>
+            {% endfor %}
+          </td>
+          <td><strong>${{ '%.2f'|format(order.total_amount) }}</strong></td>
+          <td>
+            <span class="status-indicator {% if order.status == 'Completed' %}status-live{% elif order.status == 'Processing' %}status-oos{% else %}status-off{% endif %}">
+              ● {{ order.status }}
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="table-empty">No sales recorded yet. Click “Record New Sale” above to add your first transaction.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Sales by Product Ranking Table -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">What customers are buying</p>
+      <h2>Sales by product</h2>
+      <p class="report-note">Ranked by units in non-cancelled orders; revenue is shown separately. “MVP” means the most-purchased product in this period.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Units sold</th>
+          <th>Sales</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in product_sales %}
+        <tr>
+          <td class="customer-name">{{ item.name }}</td>
+          <td>{{ item.units }}</td>
+          <td>${{ '%.2f'|format(item.revenue) }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="table-empty">No recorded sales in this period.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
 {% endblock %}

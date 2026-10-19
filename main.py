@@ -171,6 +171,9 @@ def migrate_catalog_schema():
         "order_items": {
             "size_variation": "VARCHAR(80) NOT NULL DEFAULT ''",
         },
+        "orders": {
+            "channel": "VARCHAR(40) NOT NULL DEFAULT 'Online delivery'",
+        },
     }
     with engine.begin() as connection:
         for table_name, columns in migrations.items():
@@ -229,6 +232,7 @@ class Order(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String(24), default="Pending")
+    channel: Mapped[str] = mapped_column(String(40), default="Online delivery")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     user: Mapped[User] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
@@ -498,6 +502,17 @@ def template_context(request: Request):
 
 templates = Jinja2Templates(directory="templates", context_processors=[template_context])
 
+ADMIN_MODULES = {
+    "overview": ("Overview", "admin_dashboard"),
+    "content": ("Content", "admin_content"),
+    "crm": ("CRM", "admin_crm"),
+    "inventory": ("Inventory", "admin_inventory"),
+    "sales": ("Sales", "admin_sales"),
+    "orders": ("Orders", "admin_orders"),
+    "analytics": ("Website analytics", "admin_analytics"),
+    "reports": ("Reports", "admin_reports"),
+}
+
 
 def get_db():
     with SessionLocal() as db:
@@ -541,6 +556,22 @@ async def verify_csrf(request: Request):
 
 def page(request: Request, template: str, **context):
     context.setdefault("form_data", {})
+    if request.url.path.startswith("/admin"):
+        module = request.url.path.split("/")[2] if request.url.path.count("/") > 1 else "overview"
+        if module == "search":
+            module = request.query_params.get("module", "overview")
+        if module == "products":
+            module = "inventory"
+        if module == "all":
+            context.setdefault("active_module", "all")
+            context.setdefault("module_label", "All modules")
+        elif module not in ADMIN_MODULES:
+            module = "overview"
+            context.setdefault("active_module", module)
+            context.setdefault("module_label", ADMIN_MODULES[module][0])
+        else:
+            context.setdefault("active_module", module)
+            context.setdefault("module_label", ADMIN_MODULES[module][0])
     return templates.TemplateResponse(request=request, name=template, context=context)
 
 
@@ -1104,8 +1135,106 @@ def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)],
 
 @app.get("/admin/inventory", name="admin_inventory", response_class=HTMLResponse)
 def admin_inventory(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
-    products = db.query(Product).order_by(Product.id).all()
-    return page(request, "admin_inventory.html", products=products, product_sizes=product_sizes)
+    products = db.query(Product).order_by(Product.id.desc()).all()
+    ordered_product_ids = {row[0] for row in db.query(OrderItem.product_id).distinct().all()}
+    return page(request, "admin_inventory.html", products=products, ordered_product_ids=ordered_product_ids)
+
+
+@app.get("/admin/inventory/new", name="admin_product_new", response_class=HTMLResponse)
+def admin_product_new(request: Request, _admin: Annotated[User, Depends(require_admin)]):
+    return page(request, "admin_product_form.html", form_data={"is_active": "on"})
+
+
+@app.get("/admin/search", name="admin_search", response_class=HTMLResponse)
+def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    module = request.query_params.get("module", "overview")
+    if module != "all" and module not in ADMIN_MODULES:
+        module = "overview"
+    query = request.query_params.get("q", "").strip()[:200]
+    results = []
+
+    def add_result(title, detail, endpoint, *, anchor="", item_module="", **params):
+        if query.casefold() not in f"{title} {detail}".casefold():
+            return
+        route = request.app.url_path_for(endpoint, **params)
+        mod_key = item_module or (module if module in ADMIN_MODULES else "overview")
+        mod_label = ADMIN_MODULES.get(mod_key, (mod_key.title(), ""))[0]
+        results.append({
+            "title": title,
+            "detail": detail,
+            "url": f"{route}{anchor}",
+            "module": mod_key,
+            "module_label": mod_label,
+        })
+
+    if query:
+        # Results link back to their management module, never to a public customer view.
+        if module in {"all", "overview"}:
+            descriptions = {
+                "overview": "Business summary, customers, revenue, orders, low stock",
+                "content": "Website pages, publishing, contact messages",
+                "crm": "Customers, email, phone, marketing preferences, purchase history",
+                "inventory": "Products, categories, prices, sizes, stock, add, edit, delete",
+                "sales": "Revenue, daily sales, best sellers, units sold",
+                "orders": "Order status, fulfillment, shipment and exchange requests",
+                "analytics": "Website visitors, page views, cart activity, conversion, SEO",
+                "reports": "Business reports, stock health, product performance",
+            }
+            for key, (label, endpoint) in ADMIN_MODULES.items():
+                add_result(label, descriptions[key], endpoint, item_module="overview")
+
+        if module in {"all", "content"}:
+            for item in db.query(PageContent).all():
+                add_result(f"{item.page_key.title()} page", f"{item.hero_heading} {item.hero_intro} {item.body} {item.meta_description}",
+                           "admin_content_edit", item_module="content", page_key=item.page_key)
+            for item in db.query(ContactMessage).order_by(ContactMessage.created_at.desc()).all():
+                add_result(item.subject, f"{item.name} · {item.email} · {item.message}", "admin_content", item_module="content", anchor="#contact-inbox")
+
+        if module in {"all", "crm"}:
+            for item in db.query(User).filter_by(role="customer").all():
+                add_result(f"{item.first_name} {item.last_name}", f"{item.email} · {item.phone}", "admin_crm", item_module="crm", anchor=f"#customer-{item.id}")
+
+        if module in {"all", "inventory", "sales", "reports"}:
+            products_query = db.query(Product)
+            if module in {"sales", "reports"}:
+                products_query = products_query.join(OrderItem).join(Order).filter(Order.status != "Cancelled").distinct()
+            for item in products_query.order_by(Product.id.desc()).all():
+                detail = f"#{item.id} · {item.category} · {item.shop_category} · ${item.price:.2f} · {item.stock_quantity} units · {item.size_variations} · {item.description}"
+                endpoint = "admin_inventory" if module in {"all", "inventory"} else ADMIN_MODULES[module][1]
+                anchor = f"#product-{item.id}" if module in {"all", "inventory"} else ""
+                res_mod = "inventory" if module == "all" else module
+                add_result(item.name, detail, endpoint, anchor=anchor, item_module=res_mod)
+
+        if module in {"all", "orders"}:
+            for item in db.query(Order).order_by(Order.created_at.desc()).all():
+                names = ", ".join(line.product.name for line in item.items)
+                detail = f"{item.status} · {item.user.first_name} {item.user.last_name} · {item.user.email} · ${item.total_amount:.2f} · {names}"
+                add_result(f"Order #{item.id}", detail, "admin_orders", anchor=f"#order-{item.id}", item_module="orders")
+            for item in db.query(OrderServiceRequest).all():
+                add_result(f"{item.kind} request · Order #{item.order_id}", f"{item.status} · {item.notes} · {item.admin_note}", "admin_orders", item_module="orders")
+
+        if module in {"all", "analytics", "reports"}:
+            sections = {
+                "analytics": ["Page views and unique visitors", "Cart additions and purchases", "Conversion rate", "Website health & SEO", "Daily visits", "Most added products"],
+                "reports": ["Net sales and customers", "Order status and pipeline", "Stock health and inventory", "Best sellers and product performance", "Daily net sales", "Storefront activity"],
+            }
+            sec_keys = ["analytics", "reports"] if module == "all" else [module]
+            for sec_key in sec_keys:
+                if sec_key in sections:
+                    for title in sections[sec_key]:
+                        add_result(title, f"Open {ADMIN_MODULES[sec_key][0]}", ADMIN_MODULES[sec_key][1], item_module=sec_key)
+
+        if module in {"all", "analytics"}:
+            since = datetime.utcnow() - timedelta(days=30)
+            for item in db.query(AnalyticsEvent).filter(AnalyticsEvent.created_at >= since).order_by(AnalyticsEvent.created_at.desc()).all():
+                product = db.get(Product, item.product_id) if item.product_id else None
+                add_result(item.event_type.replace("_", " ").title(), f"{item.page_path} · {product.name if product else ''} · {item.created_at:%Y-%m-%d}", "admin_analytics", item_module="analytics")
+
+    module_label = "All modules" if module == "all" else ADMIN_MODULES.get(module, ("Overview", ""))[0]
+    module_endpoint = "admin_dashboard" if module == "all" else ADMIN_MODULES.get(module, ("", "admin_dashboard"))[1]
+
+    return page(request, "admin_search.html", query=query, results=results, active_module=module,
+                module_label=module_label, module_endpoint=module_endpoint, admin_modules=ADMIN_MODULES)
 
 
 @app.get("/admin/sales", name="admin_sales", response_class=HTMLResponse)
@@ -1133,6 +1262,17 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
     daily_sales = [{"day": day, "amount": amount} for day, amount in sorted(daily_totals.items())]
     revenue = sum((order.total_amount for order in orders), Decimal("0.00"))
     best_seller = max(product_sales.values(), key=lambda item: (item["units"], item["revenue"]), default=None)
+
+    # Sales Channels Breakdown (Store vs Online delivery)
+    store_orders = [o for o in orders if getattr(o, "channel", "Online delivery") == "In-store"]
+    online_orders = [o for o in orders if getattr(o, "channel", "Online delivery") != "In-store"]
+    store_revenue = sum((o.total_amount for o in store_orders), Decimal("0.00"))
+    online_revenue = sum((o.total_amount for o in online_orders), Decimal("0.00"))
+
+    # Active catalog items & CRM customers for sales entry
+    all_products = db.query(Product).order_by(Product.name).all()
+    all_customers = db.query(User).filter_by(role="customer").order_by(User.first_name, User.last_name).all()
+
     return page(
         request, "admin_sales.html", period=period, orders=orders, revenue=revenue,
         order_count=len(orders), average_order=revenue / len(orders) if orders else Decimal("0.00"),
@@ -1143,7 +1283,133 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         ),
         best_seller=best_seller,
         daily_sales=daily_sales, max_daily=max((row["amount"] for row in daily_sales), default=Decimal("0.00")),
+        store_revenue=store_revenue, online_revenue=online_revenue,
+        store_orders_count=len(store_orders), online_orders_count=len(online_orders),
+        all_products=all_products, all_customers=all_customers,
     )
+
+
+@app.post("/admin/sales/record", name="record_sale", dependencies=[Depends(verify_csrf)])
+async def record_sale(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    form = await request.form()
+    channel = str(form.get("channel", "In-store")).strip()
+    if channel not in {"In-store", "Online delivery"}:
+        channel = "In-store"
+
+    try:
+        product_id = int(form.get("product_id", 0))
+        quantity = int(form.get("quantity", 1))
+    except (TypeError, ValueError):
+        request.session["flash"] = ["error", "Select a valid product and enter a valid quantity."]
+        return RedirectResponse("/admin/sales", status_code=303)
+
+    if quantity < 1:
+        request.session["flash"] = ["error", "Quantity must be at least 1."]
+        return RedirectResponse("/admin/sales", status_code=303)
+
+    product = db.get(Product, product_id)
+    if not product:
+        request.session["flash"] = ["error", "Product not found."]
+        return RedirectResponse("/admin/sales", status_code=303)
+
+    size_variation = str(form.get("size_variation", "")).strip()[:80]
+
+    raw_price = form.get("price")
+    try:
+        if raw_price:
+            unit_price = Decimal(str(raw_price))
+            if unit_price <= 0:
+                unit_price = product.price
+        else:
+            unit_price = product.price
+    except (InvalidOperation, ValueError):
+        unit_price = product.price
+
+    status = str(form.get("status", "Completed")).strip()
+    if status not in {"Completed", "Processing", "Pending"}:
+        status = "Completed"
+
+    # Customer verification and CRM registration
+    customer_type = str(form.get("customer_type", "new")).strip()
+    existing_user_id = form.get("existing_user_id")
+    customer = None
+
+    if customer_type == "existing" and existing_user_id:
+        try:
+            customer = db.get(User, int(existing_user_id))
+        except (TypeError, ValueError):
+            customer = None
+
+    if not customer:
+        email = str(form.get("email", "")).strip().lower()
+        first_name = str(form.get("first_name", "")).strip()
+        last_name = str(form.get("last_name", "")).strip()
+        phone = str(form.get("phone", "")).strip()
+        marketing_opt_in = form.get("marketing_opt_in") == "on"
+
+        if email:
+            customer = db.query(User).filter(func.lower(User.email) == email).first()
+
+        if customer:
+            # Verified existing customer in CRM: update contact info if provided
+            if phone and not customer.phone:
+                customer.phone = phone
+            if first_name and not customer.first_name:
+                customer.first_name = first_name
+            if last_name and not customer.last_name:
+                customer.last_name = last_name
+        else:
+            # New customer to be permanently stored in CRM!
+            if not email:
+                email = f"walkin.{secrets.token_hex(4)}@store.allofus"
+            customer = User(
+                first_name=first_name or "Store",
+                last_name=last_name or "Guest",
+                email=email,
+                phone=phone,
+                marketing_opt_in=marketing_opt_in,
+                role="customer",
+                password_hash=generate_password_hash(secrets.token_hex(16)),
+            )
+            db.add(customer)
+            db.flush()
+
+    total_amount = unit_price * quantity
+    order = Order(
+        user_id=customer.id,
+        total_amount=total_amount,
+        status=status,
+        channel=channel,
+    )
+    db.add(order)
+    db.flush()
+
+    order_item = OrderItem(
+        order_id=order.id,
+        product_id=product.id,
+        quantity=quantity,
+        size_variation=size_variation,
+        price_at_purchase=unit_price,
+    )
+    db.add(order_item)
+
+    # Deduct product stock
+    product.stock_quantity = max(0, product.stock_quantity - quantity)
+
+    # Track purchase event
+    track_event(db, request, "purchase", product_id=product.id)
+
+    db.commit()
+
+    request.session["flash"] = [
+        "success",
+        f"Sale recorded: {quantity}x {product.name} (${total_amount:.2f}) via {channel}. Customer {customer.first_name} {customer.last_name} ({customer.email}) saved to CRM.",
+    ]
+    return RedirectResponse(f"/admin/sales#order-{order.id}", status_code=303)
 
 
 @app.get("/admin/orders", name="admin_orders", response_class=HTMLResponse)
@@ -1243,19 +1509,21 @@ async def create_product(request: Request, _admin: Annotated[User, Depends(requi
         product_values = parse_product_fields(form)
         image = await read_product_image(form)
     except (InvalidOperation, ValueError) as error:
-        request.session["flash"] = ["error", str(error) or "Enter valid product details."]
-        return RedirectResponse("/admin/inventory", status_code=303)
+        form_data = {key: str(form.get(key, "")) for key in (
+            "name", "category", "shop_category", "price", "stock_quantity", "size_variations", "description", "is_active"
+        )}
+        return page(request, "admin_product_form.html", form_data=form_data,
+                    error=str(error) or "Enter valid product details.")
     if image:
         product_values["photo_path"] = save_product_image(image)
-    db.add(Product(**product_values))
+    product = Product(**product_values)
+    db.add(product)
     db.commit()
     if product_values["is_active"]:
-        request.session["flash"] = ["success", "Product published to Shop."]
-        destination = f"/shop?shop_category={quote(product_values['shop_category'], safe='')}"
+        request.session["flash"] = ["success", "Product added to inventory and published to Shop. Use View in shop to see its product page."]
     else:
-        request.session["flash"] = ["success", "Product saved as hidden. Activate it to publish in Shop."]
-        destination = "/admin/inventory"
-    return RedirectResponse(destination, status_code=303)
+        request.session["flash"] = ["success", "Product added to inventory as hidden. Activate it to publish in Shop."]
+    return RedirectResponse(f"/admin/inventory#product-{product.id}", status_code=303)
 
 
 @app.post("/admin/products/{product_id}", name="update_product", dependencies=[Depends(verify_csrf)])
@@ -1278,6 +1546,24 @@ async def update_product(product_id: int, request: Request, _admin: Annotated[Us
         setattr(product, field, value)
     db.commit()
     request.session["flash"] = ["success", "Product updated."]
+    return RedirectResponse(f"/admin/inventory#product-{product.id}", status_code=303)
+
+
+@app.post("/admin/products/{product_id}/delete", name="delete_product", dependencies=[Depends(verify_csrf)])
+async def delete_product(product_id: int, request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if db.query(OrderItem).filter_by(product_id=product_id).first():
+        request.session["flash"] = ["error", "This product belongs to past orders and cannot be deleted. Uncheck Active in shop and save to hide it instead."]
+        return RedirectResponse(f"/admin/inventory#product-{product_id}", status_code=303)
+    # Keep aggregate event history without leaving dangling product references.
+    db.query(AnalyticsEvent).filter_by(product_id=product_id).update({"product_id": None})
+    db.delete(product)
+    db.commit()
+    cart = request.session.get("cart", {})
+    request.session["cart"] = {key: quantity for key, quantity in cart.items() if key.split(":", 1)[0] != str(product_id)}
+    request.session["flash"] = ["success", "Product deleted from inventory and Shop."]
     return RedirectResponse("/admin/inventory", status_code=303)
 
 

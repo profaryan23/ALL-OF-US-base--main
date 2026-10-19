@@ -3,16 +3,30 @@
 {% block content %}
 <section class="admin-shell">
   <div class="admin-top"><div><p class="eyebrow">All of Us / Back office</p><h1>{% block module_heading %}Studio{% endblock %}<span class="heading-period">.</span></h1></div><a class="back-link" href="{{ url_for('storefront') }}">View storefront ↗</a></div>
-  <nav class="module-nav" aria-label="Management modules">
-    <a href="{{ url_for('admin_dashboard') }}">Overview</a>
-    <a href="{{ url_for('admin_content') }}">Content</a>
-    <a href="{{ url_for('admin_crm') }}">CRM</a>
-    <a href="{{ url_for('admin_inventory') }}">Inventory</a>
-    <a href="{{ url_for('admin_sales') }}">Sales</a>
-    <a href="{{ url_for('admin_orders') }}">Orders</a>
-    <a href="{{ url_for('admin_analytics') }}">Website analytics</a>
-    <a href="{{ url_for('admin_reports') }}">Reports</a>
-  </nav>
+  <div class="module-nav-container">
+    <nav class="module-nav" aria-label="Management modules">
+      <a href="{{ url_for('admin_dashboard') }}" class="{% if active_module == 'overview' %}active{% endif %}">Overview</a>
+      <a href="{{ url_for('admin_content') }}" class="{% if active_module == 'content' %}active{% endif %}">Content</a>
+      <a href="{{ url_for('admin_crm') }}" class="{% if active_module == 'crm' %}active{% endif %}">CRM</a>
+      <a href="{{ url_for('admin_inventory') }}" class="{% if active_module == 'inventory' %}active{% endif %}">Inventory</a>
+      <a href="{{ url_for('admin_sales') }}" class="{% if active_module == 'sales' %}active{% endif %}">Sales</a>
+      <a href="{{ url_for('admin_orders') }}" class="{% if active_module == 'orders' %}active{% endif %}">Orders</a>
+      <a href="{{ url_for('admin_analytics') }}" class="{% if active_module == 'analytics' %}active{% endif %}">Website analytics</a>
+      <a href="{{ url_for('admin_reports') }}" class="{% if active_module == 'reports' %}active{% endif %}">Reports</a>
+    </nav>
+    <div class="module-nav-search-area">
+      <form class="module-nav-search-form" action="{{ url_for('admin_search') }}" method="get" role="search">
+        <input type="hidden" name="module" value="{{ active_module or 'overview' }}">
+        <div class="search-input-group">
+          <input type="search" name="q" placeholder="Search {{ module_label or 'studio' }}..." aria-label="Search {{ module_label or 'studio' }}" value="{{ query or '' }}" class="nav-search-input" autocomplete="off">
+          <button type="submit" class="button button-dark nav-search-button" title="Search {{ module_label or 'module' }}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px; margin-right:4px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+            <span>Search</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
   {% block module_content %}{% endblock %}
 </section>
 {% endblock %}

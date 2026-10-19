@@ -9,9 +9,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20261007-8">
-  <link rel="stylesheet" href="{{ url_for('static', filename='monochrome.css') }}?v=20261007-8">
-  <link rel="stylesheet" href="{{ url_for('static', filename='product-pages.css') }}?v=20261007-1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20261019-3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='monochrome.css') }}?v=20261019-3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='product-pages.css') }}?v=20261019-3">
 </head>
 <body>
   <div class="announcement">{{ site_content.site_announcement }}</div>
@@ -35,6 +35,6 @@
     {% block content %}{% endblock %}
   </main>
   <footer class="site-footer"><a class="wordmark footer-mark" href="{{ url_for('storefront') }}">ALL OF US</a><span>{{ site_content.footer_tagline }}</span><div class="footer-links">{% if about_content and about_content.published %}<a href="{{ url_for('about_page') }}">About</a>{% endif %}{% if contact_content and contact_content.published %}<a href="{{ url_for('contact_page') }}">Contact</a>{% endif %}<a href="{{ url_for('admin_login') }}">Team access</a></div></footer>
-  <script src="{{ url_for('static', filename='app.js') }}?v=20261007-6" defer></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v=20261019-3" defer></script>
 </body>
 </html>

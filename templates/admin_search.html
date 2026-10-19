@@ -1,0 +1,123 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Search · {{ module_label }}{% endblock %}
+{% block module_heading %}Studio search{% endblock %}
+
+{% block module_content %}
+<section class="admin-section module-section search-module-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Studio directory & search</p>
+      <h2>Search {{ module_label }}</h2>
+    </div>
+    {% if query %}
+      <span class="product-count">{{ results|length }} result{{ 's' if results|length != 1 else '' }}</span>
+    {% endif %}
+  </div>
+
+  <!-- Search Filter Modules Tabs -->
+  <div class="search-module-tabs" aria-label="Search modules">
+    <a href="{{ url_for('admin_search') }}?module=all{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'all' %}active{% endif %}">
+      All modules
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=overview{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'overview' %}active{% endif %}">
+      Overview
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=content{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'content' %}active{% endif %}">
+      Content
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=crm{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'crm' %}active{% endif %}">
+      CRM
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=inventory{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'inventory' %}active{% endif %}">
+      Inventory
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=sales{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'sales' %}active{% endif %}">
+      Sales
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=orders{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'orders' %}active{% endif %}">
+      Orders
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=analytics{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'analytics' %}active{% endif %}">
+      Website analytics
+    </a>
+    <a href="{{ url_for('admin_search') }}?module=reports{% if query %}&q={{ query }}{% endif %}" class="search-module-tab {% if active_module == 'reports' %}active{% endif %}">
+      Reports
+    </a>
+  </div>
+
+  <!-- Main Search Form -->
+  <form class="search-hero-form" method="get" action="{{ url_for('admin_search') }}">
+    <input type="hidden" name="module" value="{{ active_module }}">
+    <div class="search-hero-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="search-icon"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="search" name="q" value="{{ query }}" placeholder="Type keywords to search {{ module_label|lower }} (e.g. product name, customer, order ID, category)..." autofocus class="search-hero-input" autocomplete="off">
+      {% if query %}
+        <a href="{{ url_for('admin_search') }}?module={{ active_module }}" class="search-clear-btn" title="Clear query">✕</a>
+      {% endif %}
+      <button type="submit" class="button button-dark search-hero-submit">Search</button>
+    </div>
+  </form>
+
+  <!-- Search Results -->
+  {% if query %}
+    {% if results %}
+      <div class="search-results-list">
+        {% for result in results %}
+          <article class="search-result-card">
+            <div class="search-result-header">
+              <span class="search-result-badge">{{ result.module_label or result.module|upper }}</span>
+              <a href="{{ result.url }}" class="search-result-link">Open in {{ result.module_label or result.module|title }} ↗</a>
+            </div>
+            <h3 class="search-result-title">
+              <a href="{{ result.url }}">{{ result.title }}</a>
+            </h3>
+            <p class="search-result-detail">{{ result.detail }}</p>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="search-empty-card">
+        <p class="search-empty-heading">No results found for “{{ query }}” in {{ module_label }}.</p>
+        <p class="search-empty-sub">Try searching with different keywords, check for spelling, or expand your search across all modules:</p>
+        <div class="search-empty-actions">
+          <a href="{{ url_for('admin_search') }}?module=all&q={{ query }}" class="button button-dark">Search All Modules ↗</a>
+          <a href="{{ url_for('admin_search') }}?module={{ active_module }}" class="button button-outline">Reset Search</a>
+        </div>
+      </div>
+    {% endif %}
+  {% else %}
+    <div class="search-tips-card">
+      <div class="search-tips-header">
+        <p class="eyebrow">Quick suggestions</p>
+        <h3>Search tips for {{ module_label }}</h3>
+      </div>
+      <div class="search-tips-grid">
+        {% if active_module in ['inventory', 'all'] %}
+          <div class="search-tip">
+            <strong>Inventory items</strong>
+            <p>Search by product name (e.g. "Ceramic", "Linen"), category, shop category, or price to jump directly to its editor.</p>
+          </div>
+        {% endif %}
+        {% if active_module in ['orders', 'all'] %}
+          <div class="search-tip">
+            <strong>Customer orders</strong>
+            <p>Find orders by ID (e.g. "1"), customer name, status ("Pending", "Completed"), or items purchased.</p>
+          </div>
+        {% endif %}
+        {% if active_module in ['crm', 'all'] %}
+          <div class="search-tip">
+            <strong>CRM customer directory</strong>
+            <p>Look up registered customers by first name, last name, phone number, or email address.</p>
+          </div>
+        {% endif %}
+        {% if active_module in ['content', 'all'] %}
+          <div class="search-tip">
+            <strong>Pages & visitor messages</strong>
+            <p>Find editable site pages, hero headings, body copy, or contact inbox messages.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

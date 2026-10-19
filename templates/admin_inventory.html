@@ -2,48 +2,277 @@
 {% block module_title %}Inventory{% endblock %}
 {% block module_heading %}Inventory{% endblock %}
 {% block module_content %}
-<section class="admin-section module-section">
-  <div class="admin-section-head"><div><p class="eyebrow">Catalog controls</p><h2>Product inventory</h2></div><span class="product-count">{{ products|length }} items</span></div>
-  <form method="post" action="{{ url_for('create_product') }}" class="product-editor-card" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="product-editor-heading"><div><p class="eyebrow">New shop product</p><h3>Add a product</h3></div></div>
-    <div class="product-editor-grid">
-      <label><span>Product name</span><input name="name" required maxlength="140" placeholder="A very good thing"></label>
-      <label><span>Category</span><input name="category" required maxlength="100" placeholder="Accessories"></label>
-      <label><span>Shop category</span><input name="shop_category" required maxlength="100" placeholder="New arrivals"></label>
-      <label><span>Price</span><input name="price" type="number" min="0.01" step="0.01" required placeholder="0.00"></label>
-      <label><span>Stock quantity</span><input name="stock_quantity" type="number" min="0" required placeholder="0"></label>
-      <label><span>Photo (JPEG, PNG, or WebP; max 10 MB)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
-      <label class="product-editor-wide"><span>Size variations</span><input name="size_variations" maxlength="1000" placeholder="Small, Medium, Large"><small>Separate available sizes with commas. Leave blank for products without sizes.</small></label>
-      <label class="product-editor-wide"><span>Description</span><textarea name="description" rows="3" maxlength="3000" placeholder="A few words about this product"></textarea></label>
-      <label class="active-toggle"><input type="checkbox" name="is_active" checked> Active in shop</label>
+<section class="admin-section module-section inventory-section">
+  <!-- Top Bar -->
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Catalog controls</p>
+      <h2>Product inventory</h2>
     </div>
-    <button class="button button-dark" type="submit">Add product to shop <span>+</span></button>
-  </form>
+    <div class="inventory-head-actions">
+      <span class="product-count">{{ products|length }} item{{ 's' if products|length != 1 else '' }}</span>
+      <button type="button" id="btn-open-add-product" class="button button-dark open-add-product-btn">
+        <span class="plus-icon">+</span> Add Product
+      </button>
+    </div>
+  </div>
 
-  <div class="inventory-list">
-    {% for product in products %}
-    <form method="post" action="{{ url_for('update_product', product_id=product.id) }}" class="product-editor-card inventory-edit-card" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="product-editor-heading">
-        <div><p class="eyebrow">Product #{{ product.id }}</p><h3>{{ product.name }}</h3><small>{{ 'Visible in shop' if product.is_active and product.stock_quantity > 0 else 'Hidden from shop' }}</small></div>
-        {% if product.photo_path %}<img class="inventory-photo-preview" src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}">{% else %}<span class="inventory-photo-empty">No photo</span>{% endif %}
+  <!-- Master-Detail Split Layout: Left Rows, Right Corner View -->
+  <div class="inventory-split-layout">
+    <!-- Left Column: Products in Rows -->
+    <div class="inventory-table-container">
+      <div class="table-wrap">
+        <table class="inventory-rows-table">
+          <thead>
+            <tr>
+              <th style="width: 52px;">Item</th>
+              <th>Product name</th>
+              <th>Category</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th>Status</th>
+              <th style="text-align: right;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for product in products %}
+            <tr class="product-row" id="product-{{ product.id }}" data-product-id="{{ product.id }}" tabindex="0" role="button" aria-label="View product {{ product.name }}">
+              <td class="product-thumb-cell">
+                {% if product.photo_path %}
+                  <img src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" class="product-mini-thumb">
+                {% else %}
+                  <div class="product-mini-thumb-empty">#{{ product.id }}</div>
+                {% endif %}
+              </td>
+              <td class="product-name-cell">
+                <strong>{{ product.name }}</strong>
+                <small>{{ product.shop_category }}</small>
+              </td>
+              <td><span class="category-pill">{{ product.category }}</span></td>
+              <td class="product-price-cell">${{ '%.2f'|format(product.price) }}</td>
+              <td>
+                {% if product.stock_quantity == 0 %}
+                  <span class="stock-badge stock-zero">0 units</span>
+                {% elif product.stock_quantity <= 5 %}
+                  <span class="stock-badge stock-low">{{ product.stock_quantity }} left</span>
+                {% else %}
+                  <span class="stock-badge">{{ product.stock_quantity }} in stock</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if product.is_active and product.stock_quantity > 0 %}
+                  <span class="status-indicator status-live" title="Visible on storefront">● Active</span>
+                {% elif product.is_active and product.stock_quantity == 0 %}
+                  <span class="status-indicator status-oos" title="Out of stock">● Sold out</span>
+                {% else %}
+                  <span class="status-indicator status-off" title="Hidden from storefront">○ Hidden</span>
+                {% endif %}
+              </td>
+              <td class="product-row-actions-cell" onclick="event.stopPropagation();">
+                <div class="row-action-buttons">
+                  <button type="button" class="row-view-btn select-product-btn" data-product-id="{{ product.id }}" title="View details in right panel">
+                    View ↗
+                  </button>
+                  {% if product.id in ordered_product_ids %}
+                    <span class="row-disabled-del" title="Has order history. Cannot delete.">🔒</span>
+                  {% else %}
+                    <form method="post" action="{{ url_for('delete_product', product_id=product.id) }}" class="inline-delete-form" onsubmit="return confirm('Permanently delete \'{{ product.name|escape }}\'?');">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <button type="submit" class="row-delete-btn" title="Delete product">✕</button>
+                    </form>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="table-empty">
+                <p>No products in inventory yet.</p>
+                <button type="button" class="button button-dark open-add-product-btn" style="margin-top: 10px;">Add your first product +</button>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
       </div>
-      <div class="product-editor-grid">
-        <label><span>Product name</span><input name="name" value="{{ product.name }}" required maxlength="140"></label>
-        <label><span>Category</span><input name="category" value="{{ product.category }}" required maxlength="100"></label>
-        <label><span>Shop category</span><input name="shop_category" value="{{ product.shop_category }}" required maxlength="100"></label>
-        <label><span>Price</span><input name="price" type="number" min="0.01" step="0.01" value="{{ '%.2f'|format(product.price) }}" required></label>
-        <label><span>Stock quantity</span><input name="stock_quantity" type="number" min="0" value="{{ product.stock_quantity }}" required></label>
-        <label><span>Replace photo (JPEG, PNG, or WebP; max 10 MB)</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
-        {% if product.photo_path %}<label class="active-toggle"><input type="checkbox" name="remove_photo"> Remove current photo</label>{% endif %}
-        <label class="product-editor-wide"><span>Size variations</span><input name="size_variations" value="{{ product.size_variations }}" maxlength="1000" placeholder="Small, Medium, Large"><small>Separate available sizes with commas.</small></label>
-        <label class="product-editor-wide"><span>Description</span><textarea name="description" rows="3" maxlength="3000">{{ product.description }}</textarea></label>
-        <label class="active-toggle"><input type="checkbox" name="is_active" {% if product.is_active %}checked{% endif %}> Active in shop</label>
+    </div>
+
+    <!-- Right Column: Detail & Form View in the Right Corner -->
+    <aside class="inventory-right-panel" id="inventory-right-pane">
+      
+      <!-- Right Pane: Add Product Form -->
+      <div id="add-product-panel" class="detail-card add-product-card" style="display: none;">
+        <div class="detail-header">
+          <div>
+            <p class="eyebrow">New catalog item</p>
+            <h3>Add a product</h3>
+          </div>
+          <button type="button" class="button button-outline button-sm close-pane-btn" id="btn-close-add-panel">✕ Close</button>
+        </div>
+        <form method="post" action="{{ url_for('create_product') }}" enctype="multipart/form-data">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="detail-form-grid">
+            <label>
+              <span>Product name *</span>
+              <input name="name" id="new-product-name-input" required maxlength="140" placeholder="e.g. Linen Everyday Tote">
+            </label>
+            <label>
+              <span>Category *</span>
+              <input name="category" required maxlength="100" placeholder="e.g. Accessories, Ceramics">
+            </label>
+            <label>
+              <span>Shop category *</span>
+              <input name="shop_category" required maxlength="100" placeholder="e.g. New arrivals, Essentials">
+            </label>
+            <div class="form-row-duo">
+              <label>
+                <span>Price ($) *</span>
+                <input name="price" type="number" min="0.01" step="0.01" required placeholder="0.00">
+              </label>
+              <label>
+                <span>Stock quantity *</span>
+                <input name="stock_quantity" type="number" min="0" required placeholder="10">
+              </label>
+            </div>
+            <label>
+              <span>Photo (JPEG, PNG, or WebP; max 10 MB)</span>
+              <input name="photo" type="file" accept="image/jpeg,image/png,image/webp">
+            </label>
+            <label>
+              <span>Size variations</span>
+              <input name="size_variations" maxlength="1000" placeholder="Small, Medium, Large">
+              <small>Separate sizes with commas</small>
+            </label>
+            <label>
+              <span>Description</span>
+              <textarea name="description" rows="3" maxlength="3000" placeholder="Material, craftsmanship, notes..."></textarea>
+            </label>
+            <label class="active-toggle">
+              <input type="checkbox" name="is_active" checked> Active in shop (publish immediately)
+            </label>
+          </div>
+          <div class="detail-actions-bar">
+            <button class="button button-dark" type="submit">Add product to shop <span>+</span></button>
+            <button type="button" class="button button-outline" id="btn-cancel-add">Cancel</button>
+          </div>
+        </form>
       </div>
-      <button class="save-button" type="submit">Save product ↗</button>
-    </form>
-    {% else %}<p class="table-empty">No products yet. Add your first item above.</p>{% endfor %}
+
+      <!-- Right Pane: Detail View Cards for Each Product -->
+      {% for product in products %}
+      <div id="product-detail-{{ product.id }}" class="detail-card product-detail-card" style="display: none;">
+        <!-- Header & Quick Links -->
+        <div class="detail-header">
+          <div>
+            <div class="detail-meta-tags">
+              <span class="badge-id">#{{ product.id }}</span>
+              <span class="category-pill">{{ product.category }}</span>
+              {% if product.is_active and product.stock_quantity > 0 %}
+                <span class="status-indicator status-live">● Active in shop</span>
+              {% elif product.is_active and product.stock_quantity == 0 %}
+                <span class="status-indicator status-oos">● Sold out</span>
+              {% else %}
+                <span class="status-indicator status-off">○ Hidden</span>
+              {% endif %}
+            </div>
+            <h3 class="detail-product-title">{{ product.name }}</h3>
+          </div>
+          <div class="detail-header-btns">
+            <a href="{{ url_for('product_detail', product_id=product.id) }}" target="_blank" rel="noopener" class="button button-outline button-sm" title="View customer page in new tab">
+              View in shop ↗
+            </a>
+            <button type="button" class="button button-outline button-sm close-pane-btn" data-close-target="product-detail-{{ product.id }}" title="Close panel">✕</button>
+          </div>
+        </div>
+
+        <!-- Storefront Visual Preview Box -->
+        <div class="storefront-preview-box">
+          <div class="preview-box-head">
+            <span class="eyebrow" style="margin: 0;">Storefront Preview</span>
+            <span class="preview-price-tag">${{ '%.2f'|format(product.price) }}</span>
+          </div>
+          <div class="preview-box-body">
+            {% if product.photo_path %}
+              <img src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" class="detail-image-preview">
+            {% else %}
+              <div class="detail-image-empty">No product image uploaded</div>
+            {% endif %}
+            <div class="preview-box-info">
+              <span class="preview-cat-text">{{ product.category }} · {{ product.shop_category }}</span>
+              <h4 class="preview-h4">{{ product.name }}</h4>
+              {% if product.description %}
+                <p class="preview-desc-text">{{ product.description }}</p>
+              {% endif %}
+              {% if product.size_variations %}
+                <div class="preview-sizes-row">
+                  <small>Sizes:</small>
+                  {% for s in product.size_variations.split(',') %}
+                    {% if s.strip() %}<span class="preview-chip">{{ s.strip() }}</span>{% endif %}
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit Form -->
+        <form method="post" action="{{ url_for('update_product', product_id=product.id) }}" enctype="multipart/form-data" class="detail-edit-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="detail-form-heading">
+            <span class="eyebrow">Edit product details</span>
+          </div>
+          <div class="detail-form-grid">
+            <label><span>Product name</span><input name="name" value="{{ product.name }}" required maxlength="140"></label>
+            <label><span>Category</span><input name="category" value="{{ product.category }}" required maxlength="100"></label>
+            <label><span>Shop category</span><input name="shop_category" value="{{ product.shop_category }}" required maxlength="100"></label>
+            <div class="form-row-duo">
+              <label><span>Price ($)</span><input name="price" type="number" min="0.01" step="0.01" value="{{ '%.2f'|format(product.price) }}" required></label>
+              <label><span>Stock quantity</span><input name="stock_quantity" type="number" min="0" value="{{ product.stock_quantity }}" required></label>
+            </div>
+            <label><span>Replace photo</span><input name="photo" type="file" accept="image/jpeg,image/png,image/webp"></label>
+            {% if product.photo_path %}
+              <label class="active-toggle"><input type="checkbox" name="remove_photo"> Remove photo</label>
+            {% endif %}
+            <label><span>Size variations</span><input name="size_variations" value="{{ product.size_variations }}" maxlength="1000" placeholder="Small, Medium, Large"></label>
+            <label><span>Description</span><textarea name="description" rows="3" maxlength="3000">{{ product.description }}</textarea></label>
+            <label class="active-toggle"><input type="checkbox" name="is_active" {% if product.is_active %}checked{% endif %}> Active in shop</label>
+          </div>
+          <div class="detail-actions-bar">
+            <button class="button button-dark" type="submit">Save product ↗</button>
+          </div>
+        </form>
+
+        <!-- Delete Zone -->
+        <div class="detail-delete-zone">
+          {% if product.id in ordered_product_ids %}
+            <div class="ordered-warning-box">
+              <button type="button" class="button button-disabled" disabled>
+                Cannot delete (Ordered)
+              </button>
+              <small>This product has order history. Uncheck "Active in shop" above to hide it from customers.</small>
+            </div>
+          {% else %}
+            <form method="post" action="{{ url_for('delete_product', product_id=product.id) }}" onsubmit="return confirm('Permanently delete {{ product.name|escape }} from inventory?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="button button-danger delete-product-btn">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:4px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                Delete product
+              </button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <!-- Default Placeholder when no product row or add form is selected -->
+      <div id="pane-empty-placeholder" class="detail-empty-placeholder">
+        <p class="empty-icon">👈</p>
+        <h4>Product details</h4>
+        <p>Click any product row on the left to view storefront preview, edit specifications, or delete.</p>
+        <button type="button" class="button button-dark open-add-product-btn" style="margin-top: 10px;">+ Add New Product</button>
+      </div>
+
+    </aside>
   </div>
 </section>
 {% endblock %}
