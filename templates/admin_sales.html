@@ -3,54 +3,89 @@
 {% block module_heading %}Sales management{% endblock %}
 
 {% block module_content %}
-<!-- Metrics Grid: Net Sales, In-store vs Online, Orders, Average Order -->
-<section class="metrics-grid sales-metrics">
+<!-- Executive KPI Cards: Gross Revenue, Net Revenue, AOV, Total Units Sold, Manufacturing Margin -->
+<section class="metrics-grid sales-metrics executive-kpi-grid">
   <article class="metric metric-dark">
-    <span>Net sales</span>
-    <strong>${{ '%.2f'|format(revenue) }}</strong>
-    <small>{{ order_count }} total orders</small>
+    <span>Gross Revenue</span>
+    <strong>${{ '%.2f'|format(gross_revenue) }}</strong>
+    <small>Pre-discounts & returns</small>
+  </article>
+  <article class="metric metric-dark">
+    <span>Net Revenue</span>
+    <strong>${{ '%.2f'|format(net_revenue) }}</strong>
+    <small>Post-discounts across {{ order_count }} orders</small>
   </article>
   <article class="metric metric-mid">
-    <span>🏪 In-store sales</span>
-    <strong>${{ '%.2f'|format(store_revenue) }}</strong>
-    <small>{{ store_orders_count }} store transactions</small>
-  </article>
-  <article class="metric metric-light">
-    <span>🚚 Online delivery</span>
-    <strong>${{ '%.2f'|format(online_revenue) }}</strong>
-    <small>{{ online_orders_count }} delivery orders</small>
-  </article>
-  <article class="metric metric-dark">
-    <span>Average order</span>
+    <span>Average Order Value (AOV)</span>
     <strong>${{ '%.2f'|format(average_order) }}</strong>
     <small>Revenue per transaction</small>
   </article>
+  <article class="metric metric-light">
+    <span>Total Units Sold</span>
+    <strong>{{ total_units_sold }} pcs</strong>
+    <small>Streetwear garments dispatched</small>
+  </article>
+  <article class="metric metric-dark" style="background: #1e252b; border-color: #313c47;">
+    <span>Est. Manufacturing Margin</span>
+    <strong>{{ '%.1f'|format(gross_margin_pct) }}%</strong>
+    <small>${{ '%.2f'|format(gross_profit) }} gross profit (Vendor COGS)</small>
+  </article>
 </section>
 
-<!-- Action Header: Period Filter & + Record Sale Button -->
+<!-- Channel Breakdown Strip (In-Store vs Online) -->
+<section class="sales-channel-strip">
+  <div class="channel-chip">
+    <span class="chip-label">🏪 In-store sales:</span>
+    <strong>${{ '%.2f'|format(store_revenue) }}</strong>
+    <small>({{ store_orders_count }} transactions)</small>
+  </div>
+  <div class="channel-chip">
+    <span class="chip-label">🚚 Online delivery:</span>
+    <strong>${{ '%.2f'|format(online_revenue) }}</strong>
+    <small>({{ online_orders_count }} shipments)</small>
+  </div>
+  {% if total_discounts > 0 %}
+  <div class="channel-chip chip-discount">
+    <span class="chip-label">🏷️ Promo deductions:</span>
+    <strong>-${{ '%.2f'|format(total_discounts) }}</strong>
+    <small>campaign promos</small>
+  </div>
+  {% endif %}
+</section>
+
+<!-- Action Header: Date Range Filter & Record Sale + Export Buttons -->
 <section class="admin-section" style="padding-top: 15px;">
   <div class="admin-section-head">
     <div>
-      <p class="eyebrow">Sales operations</p>
-      <h2>Transactions & revenue</h2>
+      <p class="eyebrow">Financial analytics & operations</p>
+      <h2>Sales & profit reporting</h2>
     </div>
     <div class="sales-head-actions">
+      <!-- Date Range Filter -->
       <form method="get" action="{{ url_for('admin_sales') }}" class="period-filter">
-        <label for="period">Period</label>
+        <label for="period">Date Range</label>
         <select id="period" name="period" onchange="this.form.submit()">
-          <option value="7" {% if period == '7' %}selected{% endif %}>7 days</option>
-          <option value="30" {% if period == '30' %}selected{% endif %}>30 days</option>
-          <option value="90" {% if period == '90' %}selected{% endif %}>90 days</option>
+          <option value="today" {% if period == 'today' %}selected{% endif %}>Today</option>
+          <option value="7" {% if period == '7' %}selected{% endif %}>Last 7 days</option>
+          <option value="30" {% if period == '30' %}selected{% endif %}>Last 30 days</option>
+          <option value="90" {% if period == '90' %}selected{% endif %}>Last 90 days</option>
           <option value="all" {% if period == 'all' %}selected{% endif %}>All time</option>
         </select>
       </form>
+
+      <!-- Export to CSV / Excel Button -->
+      <a href="{{ url_for('export_sales') }}?period={{ period }}" class="button button-outline export-ledger-btn" title="Download completed transaction ledger CSV for reconciliation">
+        <span class="download-icon">↓</span> Export to CSV
+      </a>
+
+      <!-- + Record New Sale Button -->
       <button type="button" id="btn-open-sale-form" class="button button-dark open-sale-btn">
         <span class="plus-icon">+</span> Record New Sale
       </button>
     </div>
   </div>
 
-  <!-- Collapsible Record Sale Form Panel -->
+  <!-- Collapsible Record Sale Form Panel (Preserved seamlessly) -->
   <div id="record-sale-panel" class="record-sale-container" style="display: none;">
     <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -107,7 +142,7 @@
         </label>
         <label>
           <span>Size / Variant</span>
-          <input name="size_variation" id="sale-size-input" maxlength="80" placeholder="e.g. Medium (optional)">
+          <input name="size_variation" id="sale-size-input" maxlength="80" placeholder="e.g. Medium, Size L (optional)">
         </label>
         <label>
           <span>Order Status</span>
@@ -197,7 +232,62 @@
   </div>
 </section>
 
-<!-- MVP Best Seller Highlight -->
+<!-- Product & Variant Performance Table with COGS & Gross Margins -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Manufacturing & Unit Economics</p>
+      <h2>Product & Variant Performance</h2>
+      <p class="report-note">Disaggregated performance tracking per garment style and size variant. Incorporates third-party manufacturing vendor COGS and gross margins.</p>
+    </div>
+    <span class="product-count">{{ variant_sales|length }} variant{{ 's' if variant_sales|length != 1 else '' }} sold</span>
+  </div>
+  <div class="table-wrap">
+    <table class="variant-performance-table">
+      <thead>
+        <tr>
+          <th>Garment Style</th>
+          <th>Size / Variant</th>
+          <th>Units Sold</th>
+          <th>Unit Price</th>
+          <th>Vendor COGS (Unit)</th>
+          <th>Gross Revenue</th>
+          <th>Gross Profit ($)</th>
+          <th>Gross Margin (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in variant_sales %}
+        <tr>
+          <td class="customer-name">
+            <strong>{{ v.product_name }}</strong>
+            <small>{{ v.category }}</small>
+          </td>
+          <td>
+            <span class="variant-tag">{{ v.size }}</span>
+          </td>
+          <td><strong>{{ v.units }}</strong></td>
+          <td>${{ '%.2f'|format(v.unit_price) }}</td>
+          <td>${{ '%.2f'|format(v.unit_cogs) }}</td>
+          <td>${{ '%.2f'|format(v.gross_revenue) }}</td>
+          <td><strong style="color: #1b5e20;">+${{ '%.2f'|format(v.gross_profit) }}</strong></td>
+          <td>
+            <span class="margin-indicator {% if v.margin_pct >= 60 %}margin-high{% elif v.margin_pct >= 40 %}margin-mid{% else %}margin-low{% endif %}">
+              {{ '%.1f'|format(v.margin_pct) }}%
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="table-empty">No variant sales logged in this date range. Record sales or fulfill orders to generate margin analytics.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- MVP Best Seller Highlight (Preserved) -->
 {% if best_seller %}
 <section class="best-seller">
   <p class="eyebrow">Most purchased · MVP</p>
@@ -209,7 +299,7 @@
 </section>
 {% endif %}
 
-<!-- Sales Activity Chart -->
+<!-- Sales Activity Chart (Preserved) -->
 <section class="admin-section">
   <div class="admin-section-head">
     <div>
@@ -230,24 +320,31 @@
   </div>
 </section>
 
-<!-- Recent Sales Transactions Log (with channel and verified customer) -->
+<!-- Comprehensive Transaction Ledger & Export -->
 <section class="admin-section">
   <div class="admin-section-head">
     <div>
-      <p class="eyebrow">Transaction history & fulfillment</p>
-      <h2>Recent sales log</h2>
+      <p class="eyebrow">Accounting & Reconciliation</p>
+      <h2>Transaction Ledger</h2>
+      <p class="report-note">Completed transactions, channel logs, customer accounts, and vendor fulfillment status.</p>
     </div>
-    <span class="product-count">{{ orders|length }} transaction{{ 's' if orders|length != 1 else '' }}</span>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <a href="{{ url_for('export_sales') }}?period={{ period }}" class="button button-outline button-sm">
+        ↓ Download CSV
+      </a>
+      <span class="product-count">{{ orders|length }} transaction{{ 's' if orders|length != 1 else '' }}</span>
+    </div>
   </div>
   <div class="table-wrap">
     <table>
       <thead>
         <tr>
-          <th>Order #</th>
+          <th>Transaction #</th>
           <th>Date</th>
           <th>Channel</th>
           <th>Customer (CRM)</th>
-          <th>Items sold</th>
+          <th>Items Dispatched</th>
+          <th>Carrier / Batch</th>
           <th>Total</th>
           <th>Status</th>
         </tr>
@@ -255,7 +352,7 @@
       <tbody>
         {% for order in orders %}
         <tr id="order-{{ order.id }}">
-          <td><strong>#{{ order.id }}</strong></td>
+          <td><strong>#{{ '%04d'|format(order.id) }}</strong></td>
           <td>{{ order.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
           <td>
             {% if order.channel == 'In-store' %}
@@ -277,6 +374,16 @@
               <span style="color: #999;">No items</span>
             {% endfor %}
           </td>
+          <td>
+            {% if order.carrier or order.vendor_batch_id %}
+              <div>{{ order.carrier or 'Courier' }}{% if order.tracking_number %}: <small>{{ order.tracking_number }}</small>{% endif %}</div>
+              {% if order.vendor_batch_id %}
+                <small class="batch-badge">Vendor: {{ order.vendor_batch_id }}</small>
+              {% endif %}
+            {% else %}
+              <small style="color: #888;">Standard dispatch</small>
+            {% endif %}
+          </td>
           <td><strong>${{ '%.2f'|format(order.total_amount) }}</strong></td>
           <td>
             <span class="status-indicator {% if order.status == 'Completed' %}status-live{% elif order.status == 'Processing' %}status-oos{% else %}status-off{% endif %}">
@@ -286,7 +393,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" class="table-empty">No sales recorded yet. Click “Record New Sale” above to add your first transaction.</td>
+          <td colspan="8" class="table-empty">No transactions recorded in this period. Click “Record New Sale” above to log your first order.</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -294,7 +401,7 @@
   </div>
 </section>
 
-<!-- Sales by Product Ranking Table -->
+<!-- Aggregated Product Ranking (Preserved) -->
 <section class="admin-section">
   <div class="admin-section-head">
     <div>

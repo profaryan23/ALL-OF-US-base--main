@@ -173,3 +173,88 @@
 .radio-label{display:flex;align-items:center;gap:6px;font-size:10px;cursor:pointer}
 .crm-badge-note{display:flex;align-items:center;gap:8px;margin-top:12px;padding:8px 12px;background:#f0f5ee;border:1px solid #c8ddc4;font-size:9px;color:#2e5b27}
 .crm-check-icon{font-weight:bold;font-size:12px}
+
+/* ========================================================
+   Part 1: Order Management Drawer & Timeline Enhancements
+   ======================================================== */
+.order-drawer-trigger{background:transparent;border:none;font:inherit;color:#111;font-weight:700;font-size:11px;cursor:pointer;padding:3px 6px;margin:-3px -6px;display:inline-flex;align-items:center;gap:4px;border-radius:2px;transition:background .15s,color .15s}
+.order-drawer-trigger:hover{background:#111;color:#fff}
+.order-drawer-trigger .trigger-icon{font-size:9px;opacity:.7}
+.batch-badge{display:inline-block;background:#f0eee6;color:#555;padding:2px 5px;font-size:8.5px;font-family:monospace;border:1px solid #dfdccf;margin-top:2px}
+
+.drawer-backdrop{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);backdrop-filter:blur(2px);z-index:9000;animation:fadeIn .2s ease-out}
+.order-slide-drawer{position:fixed;top:0;right:0;bottom:0;width:min(680px,94vw);background:#fcfbf8;box-shadow:-8px 0 32px rgba(0,0,0,.18);z-index:9001;display:flex;flex-direction:column;animation:slideInRight .25s cubic-bezier(.16,1,.3,1);border-left:1px solid #d5d3cb}
+@keyframes slideInRight{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+
+.drawer-content{display:flex;flex-direction:column;height:100%;overflow-y:auto}
+.drawer-header{padding:20px 24px;border-bottom:1px solid #dedbd0;background:#f4f2ea;display:flex;justify-content:space-between;align-items:flex-start}
+.drawer-title-row{display:flex;align-items:center;gap:12px;margin:4px 0 2px}
+.drawer-title-row h2{margin:0;font:500 22px var(--serif);letter-spacing:-.01em}
+.drawer-meta-time{font-size:9.5px;color:#666}
+.drawer-close-btn{background:transparent;border:1px solid #ccc;width:32px;height:32px;font-size:14px;cursor:pointer;border-radius:2px;display:flex;align-items:center;justify-content:center;transition:background .15s,border-color .15s}
+.drawer-close-btn:hover{background:#111;color:#fff;border-color:#111}
+
+.drawer-body{padding:20px 24px;display:flex;flex-direction:column;gap:18px}
+.drawer-box{background:#fff;border:1px solid #e2ded5;padding:16px 18px;position:relative}
+.box-title{font:600 11px var(--sans);text-transform:uppercase;letter-spacing:.08em;color:#222;margin:0 0 12px}
+.box-title-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+.box-title-row .box-title{margin-bottom:0}
+.box-action-link{font-size:9.5px;color:#111;text-decoration:underline;text-transform:uppercase;letter-spacing:.06em}
+
+/* Audit Trail Timeline */
+.audit-timeline{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;padding:8px 4px}
+.timeline-step{display:flex;flex-direction:column;align-items:center;text-align:center;flex:1;position:relative}
+.step-marker{width:26px;height:26px;border-radius:50%;border:2px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:#fff;color:#777;margin-bottom:6px;transition:all .2s}
+.step-info strong{display:block;font-size:10px;color:#222;line-height:1.3}
+.step-info small{display:block;font-size:8.5px;color:#777;margin-top:2px}
+.step-completed .step-marker{background:#111;color:#fff;border-color:#111}
+.step-pending .step-marker{border-color:#aaa;background:#f0eee6;color:#555}
+.step-cancelled .step-marker{background:#991b1b;color:#fff;border-color:#991b1b}
+.timeline-connector{flex:0 0 32px;height:2px;background:#ddd;margin-top:12px}
+.connector-active{background:#111}
+@media(max-width:540px){.audit-timeline{flex-direction:column;align-items:flex-start;gap:12px}.timeline-connector{display:none}}
+
+/* Drawer Details Grid */
+.detail-two-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.detail-cell{display:flex;flex-direction:column;gap:3px}
+.cell-label{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:#777}
+.cell-val{font-size:10.5px;color:#111}
+.variant-tag{display:inline-block;padding:2px 6px;background:#f0f0eb;border:1px solid #d4d4cc;font-size:9px;font-weight:600}
+
+/* Financial Meta Grid */
+.financial-meta-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;background:#fcfbf8;padding:12px;border:1px solid #eae7df}
+.fin-item{display:flex;flex-direction:column;gap:2px}
+.fin-item span{font-size:8.5px;text-transform:uppercase;color:#777;letter-spacing:.05em}
+.fin-item strong{font-size:11px;color:#111}
+.fin-total{grid-column:1/-1;border-top:1px dashed #ccc;padding-top:8px;margin-top:4px;display:flex;flex-direction:row;justify-content:space-between;align-items:center}
+.fin-total strong{font:600 16px var(--serif);color:#111}
+
+/* Drawer Form & Fields */
+.drawer-fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+@media(max-width:560px){.drawer-fields-grid{grid-template-columns:1fr}}
+.field-hint{display:block;font-size:8px;color:#777;margin-top:2px}
+.drawer-actions-bar{display:flex;gap:10px;margin-top:8px}
+
+/* ========================================================
+   Part 2: Sales Management Executive KPIs, Margins & Ledger
+   ======================================================== */
+.executive-kpi-grid{grid-template-columns:repeat(5,1fr)}
+@media(max-width:980px){.executive-kpi-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:640px){.executive-kpi-grid{grid-template-columns:1fr 1fr}}
+
+.sales-channel-strip{display:flex;flex-wrap:wrap;gap:12px;margin:12px 0 16px;padding:10px 16px;background:#eae8e0;border:1px solid #d8d5cb}
+.channel-chip{display:flex;align-items:center;gap:6px;font-size:10px;color:#333}
+.channel-chip .chip-label{text-transform:uppercase;font-size:9px;letter-spacing:.05em;color:#666}
+.channel-chip strong{font-weight:700;color:#111}
+.channel-chip small{color:#777}
+.chip-discount strong{color:#991b1b}
+
+.export-ledger-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 12px;font-size:10px;text-decoration:none;white-space:nowrap}
+.export-ledger-btn .download-icon{font-weight:bold}
+
+.variant-performance-table td,.variant-performance-table th{vertical-align:middle}
+.margin-indicator{display:inline-block;padding:2px 7px;font-size:9px;font-weight:700;letter-spacing:.02em}
+.margin-high{background:#e8f5e9;color:#1b5e20;border:1px solid #a5d6a7}
+.margin-mid{background:#fef7e0;color:#7a5800;border:1px solid #f9df88}
+.margin-low{background:#fbe9e7;color:#b71c1c;border:1px solid #ffab91}

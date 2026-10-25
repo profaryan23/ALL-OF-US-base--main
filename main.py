@@ -146,6 +146,15 @@ def parse_product_fields(form) -> dict:
         raise ValueError("Check the product name, categories, description, and size variations.")
     price = Decimal(str(form.get("price", "")))
     stock = int(str(form.get("stock_quantity", "")))
+    raw_cogs = form.get("cogs")
+    cogs = Decimal("0.00")
+    if raw_cogs:
+        try:
+            cogs = Decimal(str(raw_cogs))
+            if cogs < 0:
+                cogs = Decimal("0.00")
+        except (InvalidOperation, ValueError):
+            cogs = Decimal("0.00")
     if not price.is_finite() or price <= 0 or stock < 0:
         raise ValueError("Enter a positive price and a non-negative stock quantity.")
     return {
@@ -155,6 +164,7 @@ def parse_product_fields(form) -> dict:
         "description": description,
         "size_variations": ", ".join(sizes),
         "price": price,
+        "cogs": cogs,
         "stock_quantity": stock,
         "is_active": form.get("is_active") == "on",
     }
@@ -167,12 +177,21 @@ def migrate_catalog_schema():
             "shop_category": "VARCHAR(100) NOT NULL DEFAULT ''",
             "photo_path": "VARCHAR(255) NOT NULL DEFAULT ''",
             "size_variations": "TEXT NOT NULL DEFAULT ''",
+            "cogs": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
         },
         "order_items": {
             "size_variation": "VARCHAR(80) NOT NULL DEFAULT ''",
         },
         "orders": {
             "channel": "VARCHAR(40) NOT NULL DEFAULT 'Online delivery'",
+            "carrier": "VARCHAR(100) NOT NULL DEFAULT ''",
+            "tracking_number": "VARCHAR(120) NOT NULL DEFAULT ''",
+            "vendor_batch_id": "VARCHAR(100) NOT NULL DEFAULT ''",
+            "shipping_address": "VARCHAR(300) NOT NULL DEFAULT ''",
+            "promo_code": "VARCHAR(50) NOT NULL DEFAULT ''",
+            "gateway_ref": "VARCHAR(100) NOT NULL DEFAULT ''",
+            "tax_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
+            "discount_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
         },
     }
     with engine.begin() as connection:
@@ -221,6 +240,7 @@ class Product(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     size_variations: Mapped[str] = mapped_column(Text, default="")
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    cogs: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -233,6 +253,14 @@ class Order(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String(24), default="Pending")
     channel: Mapped[str] = mapped_column(String(40), default="Online delivery")
+    carrier: Mapped[str] = mapped_column(String(100), default="")
+    tracking_number: Mapped[str] = mapped_column(String(120), default="")
+    vendor_batch_id: Mapped[str] = mapped_column(String(100), default="")
+    shipping_address: Mapped[str] = mapped_column(String(300), default="")
+    promo_code: Mapped[str] = mapped_column(String(50), default="")
+    gateway_ref: Mapped[str] = mapped_column(String(100), default="")
+    tax_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     user: Mapped[User] = relationship(back_populates="orders")
     items: Mapped[list["OrderItem"]] = relationship(back_populates="order", cascade="all, delete-orphan")
@@ -1240,27 +1268,102 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
 @app.get("/admin/sales", name="admin_sales", response_class=HTMLResponse)
 def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     period = request.query_params.get("period", "30")
-    if period not in {"7", "30", "90", "all"}:
+    if period not in {"today", "7", "30", "90", "all"}:
         period = "30"
-    since = datetime.utcnow() - timedelta(days=int(period)) if period != "all" else None
+    
+    now = datetime.utcnow()
+    if period == "today":
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "7":
+        since = now - timedelta(days=7)
+    elif period == "30":
+        since = now - timedelta(days=30)
+    elif period == "90":
+        since = now - timedelta(days=90)
+    else:
+        since = None
+
     orders_query = db.query(Order).filter(Order.status != "Cancelled")
     if since:
         orders_query = orders_query.filter(Order.created_at >= since)
     orders = orders_query.order_by(Order.created_at.desc()).all()
+
     items_query = db.query(OrderItem).join(Order).filter(Order.status != "Cancelled")
     if since:
         items_query = items_query.filter(Order.created_at >= since)
+    order_items = items_query.all()
+
+    # Product and Variant performance breakdown
     product_sales = {}
-    for item in items_query.all():
-        row = product_sales.setdefault(item.product_id, {"name": item.product.name, "units": 0, "revenue": Decimal("0.00")})
-        row["units"] += item.quantity
-        row["revenue"] += item.price_at_purchase * item.quantity
+    variant_sales = {}
+    total_units_sold = 0
+    total_cogs = Decimal("0.00")
+    gross_revenue = Decimal("0.00")
+
+    for item in order_items:
+        qty = item.quantity
+        line_rev = item.price_at_purchase * qty
+        prod = item.product
+        
+        # Product unit manufacturing vendor cost (COGS)
+        # If product COGS is set use it, otherwise benchmark at 38% of product standard price for direct manufacturing
+        unit_cogs = prod.cogs if (getattr(prod, "cogs", None) and prod.cogs > 0) else (prod.price * Decimal("0.38"))
+        line_cogs = unit_cogs * qty
+        
+        total_units_sold += qty
+        gross_revenue += line_rev
+        total_cogs += line_cogs
+
+        # Product-level aggregation
+        row = product_sales.setdefault(item.product_id, {
+            "name": prod.name,
+            "units": 0,
+            "revenue": Decimal("0.00"),
+            "cogs": Decimal("0.00"),
+        })
+        row["units"] += qty
+        row["revenue"] += line_rev
+        row["cogs"] += line_cogs
+
+        # Variant-level breakdown (e.g. Grey Henley - Size L)
+        variant_key = f"{prod.id}::{item.size_variation or 'Standard'}"
+        vrow = variant_sales.setdefault(variant_key, {
+            "product_id": prod.id,
+            "product_name": prod.name,
+            "size": item.size_variation or "Standard",
+            "category": getattr(prod, "shop_category", prod.category),
+            "units": 0,
+            "gross_revenue": Decimal("0.00"),
+            "unit_price": item.price_at_purchase,
+            "unit_cogs": unit_cogs,
+            "total_cogs": Decimal("0.00"),
+            "gross_profit": Decimal("0.00"),
+            "margin_pct": Decimal("0.0"),
+        })
+        vrow["units"] += qty
+        vrow["gross_revenue"] += line_rev
+        vrow["total_cogs"] += line_cogs
+        vrow["gross_profit"] = vrow["gross_revenue"] - vrow["total_cogs"]
+        if vrow["gross_revenue"] > 0:
+            vrow["margin_pct"] = (vrow["gross_profit"] / vrow["gross_revenue"]) * Decimal("100.0")
+
     daily_totals = {}
     for order in orders:
         day = order.created_at.strftime("%b %d")
         daily_totals[day] = daily_totals.get(day, Decimal("0.00")) + order.total_amount
     daily_sales = [{"day": day, "amount": amount} for day, amount in sorted(daily_totals.items())]
-    revenue = sum((order.total_amount for order in orders), Decimal("0.00"))
+
+    # Executive Financial KPIs
+    total_order_amount = sum((order.total_amount for order in orders), Decimal("0.00"))
+    total_discounts = sum((getattr(order, "discount_amount", Decimal("0.00")) or Decimal("0.00") for order in orders), Decimal("0.00"))
+    # Net revenue post-discounts
+    net_revenue = total_order_amount
+    if gross_revenue < total_order_amount:
+        gross_revenue = total_order_amount
+    gross_profit = gross_revenue - total_cogs
+    gross_margin_pct = (gross_profit / gross_revenue * Decimal("100.0")) if gross_revenue > 0 else Decimal("0.0")
+    aov = (net_revenue / len(orders)) if orders else Decimal("0.00")
+
     best_seller = max(product_sales.values(), key=lambda item: (item["units"], item["revenue"]), default=None)
 
     # Sales Channels Breakdown (Store vs Online delivery)
@@ -1273,9 +1376,20 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
     all_products = db.query(Product).order_by(Product.name).all()
     all_customers = db.query(User).filter_by(role="customer").order_by(User.first_name, User.last_name).all()
 
+    sorted_variants = sorted(
+        variant_sales.values(),
+        key=lambda v: (v["units"], v["gross_revenue"]),
+        reverse=True,
+    )
+
     return page(
-        request, "admin_sales.html", period=period, orders=orders, revenue=revenue,
-        order_count=len(orders), average_order=revenue / len(orders) if orders else Decimal("0.00"),
+        request, "admin_sales.html", period=period, orders=orders, revenue=net_revenue,
+        gross_revenue=gross_revenue, net_revenue=net_revenue,
+        total_units_sold=total_units_sold, total_cogs=total_cogs,
+        gross_profit=gross_profit, gross_margin_pct=gross_margin_pct,
+        total_discounts=total_discounts,
+        order_count=len(orders), average_order=aov,
+        variant_sales=sorted_variants,
         product_sales=sorted(
             product_sales.values(),
             key=lambda item: (item["units"], item["revenue"]),
@@ -1286,6 +1400,94 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         store_revenue=store_revenue, online_revenue=online_revenue,
         store_orders_count=len(store_orders), online_orders_count=len(online_orders),
         all_products=all_products, all_customers=all_customers,
+    )
+
+
+@app.get("/admin/sales/export", name="export_sales")
+def export_sales(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    period = request.query_params.get("period", "all")
+    now = datetime.utcnow()
+    since = None
+    if period == "today":
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif period == "7":
+        since = now - timedelta(days=7)
+    elif period == "30":
+        since = now - timedelta(days=30)
+    elif period == "90":
+        since = now - timedelta(days=90)
+
+    orders_query = db.query(Order).order_by(Order.created_at.desc())
+    if since:
+        orders_query = orders_query.filter(Order.created_at >= since)
+    orders = orders_query.all()
+
+    output = io.StringIO(newline="")
+    writer = csv.writer(output)
+    writer.writerow([
+        "Transaction ID",
+        "Order Date (UTC)",
+        "Channel",
+        "Customer Name",
+        "Customer Email",
+        "Status",
+        "Items Sold",
+        "Gross Subtotal ($)",
+        "Discounts ($)",
+        "Tax ($)",
+        "Total Revenue ($)",
+        "Estimated COGS ($)",
+        "Gross Profit ($)",
+        "Carrier",
+        "Tracking Number",
+        "Vendor Batch ID",
+        "Gateway Ref",
+    ])
+
+    for o in orders:
+        cogs = Decimal("0.00")
+        item_descs = []
+        for it in o.items:
+            unit_c = it.product.cogs if (getattr(it.product, "cogs", None) and it.product.cogs > 0) else (it.product.price * Decimal("0.38"))
+            cogs += unit_c * it.quantity
+            var_label = f" ({it.size_variation})" if it.size_variation else ""
+            item_descs.append(f"{it.quantity}x {it.product.name}{var_label}")
+
+        cust_name = f"{o.user.first_name} {o.user.last_name}" if o.user else "Direct Customer"
+        cust_email = o.user.email if o.user else ""
+        discounts = getattr(o, "discount_amount", Decimal("0.00")) or Decimal("0.00")
+        tax = getattr(o, "tax_amount", Decimal("0.00")) or Decimal("0.00")
+        subtotal = o.total_amount + discounts - tax
+        profit = o.total_amount - cogs
+
+        writer.writerow([
+            f"#{o.id:04d}",
+            o.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            getattr(o, "channel", "Online delivery"),
+            cust_name,
+            cust_email,
+            o.status,
+            "; ".join(item_descs) or "N/A",
+            f"{subtotal:.2f}",
+            f"{discounts:.2f}",
+            f"{tax:.2f}",
+            f"{o.total_amount:.2f}",
+            f"{cogs:.2f}",
+            f"{profit:.2f}",
+            getattr(o, "carrier", "") or "",
+            getattr(o, "tracking_number", "") or "",
+            getattr(o, "vendor_batch_id", "") or "",
+            getattr(o, "gateway_ref", "") or "",
+        ])
+
+    return Response(
+        output.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=all-of-us-sales-ledger-{period}.csv"},
     )
 
 
@@ -1580,6 +1782,60 @@ async def update_order(order_id: int, request: Request, _admin: Annotated[User, 
     db.commit()
     request.session["flash"] = ["success", f"Order #{order.id} updated."]
     return RedirectResponse("/admin/orders", status_code=303)
+
+
+@app.post("/admin/orders/{order_id}/fulfillment", name="update_order_fulfillment", dependencies=[Depends(verify_csrf)])
+async def update_order_fulfillment(
+    order_id: int,
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    form = await request.form()
+    status = str(form.get("status", "")).strip()
+    if status and status in {"Pending", "Processing", "Completed", "Cancelled"}:
+        order.status = status
+
+    carrier = str(form.get("carrier", "")).strip()[:100]
+    tracking_number = str(form.get("tracking_number", "")).strip()[:120]
+    vendor_batch_id = str(form.get("vendor_batch_id", "")).strip()[:100]
+    shipping_address = str(form.get("shipping_address", "")).strip()[:300]
+    promo_code = str(form.get("promo_code", "")).strip()[:50]
+    gateway_ref = str(form.get("gateway_ref", "")).strip()[:100]
+
+    order.carrier = carrier
+    order.tracking_number = tracking_number
+    order.vendor_batch_id = vendor_batch_id
+    if shipping_address:
+        order.shipping_address = shipping_address
+    if promo_code:
+        order.promo_code = promo_code
+    if gateway_ref:
+        order.gateway_ref = gateway_ref
+
+    raw_tax = form.get("tax_amount")
+    if raw_tax:
+        try:
+            order.tax_amount = Decimal(str(raw_tax))
+        except (InvalidOperation, ValueError):
+            pass
+
+    raw_discount = form.get("discount_amount")
+    if raw_discount:
+        try:
+            order.discount_amount = Decimal(str(raw_discount))
+        except (InvalidOperation, ValueError):
+            pass
+
+    db.commit()
+    request.session["flash"] = [
+        "success",
+        f"Fulfillment & vendor production batch details saved for Order #{order.id:04d}."
+    ]
+    return RedirectResponse(f"/admin/orders#order-{order.id}", status_code=303)
 
 
 @app.get("/admin/crm/export", name="export_customers")

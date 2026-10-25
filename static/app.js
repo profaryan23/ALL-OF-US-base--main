@@ -267,18 +267,81 @@ document.addEventListener("DOMContentLoaded", () => {
     openRecordSaleForm();
   }
 
-  if (window.location.hash && window.location.hash.startsWith("#order-")) {
-    const orderRow = document.querySelector(window.location.hash);
-    if (orderRow) {
-      orderRow.style.outline = "2px solid #111";
-      orderRow.scrollIntoView({ behavior: "smooth", block: "center" });
+  // ==========================================
+  // Part 1: Order Management Slide-over Drawer
+  // ==========================================
+  const drawerBackdrop = document.getElementById("order-drawer-backdrop");
+  const drawerTriggers = document.querySelectorAll(".order-drawer-trigger");
+  const drawerCloseButtons = document.querySelectorAll(".drawer-close-btn, [data-close-drawer]");
+  const allOrderDrawers = document.querySelectorAll(".order-slide-drawer");
+
+  function closeAllOrderDrawers() {
+    allOrderDrawers.forEach((drawer) => {
+      drawer.style.display = "none";
+      drawer.setAttribute("aria-hidden", "true");
+    });
+    if (drawerBackdrop) drawerBackdrop.style.display = "none";
+    document.body.style.overflow = "";
+  }
+
+  function openOrderDrawer(orderId) {
+    closeAllOrderDrawers();
+    const targetDrawer = document.getElementById(`order-drawer-${orderId}`);
+    if (targetDrawer) {
+      targetDrawer.style.display = "flex";
+      targetDrawer.setAttribute("aria-hidden", "false");
+      if (drawerBackdrop) drawerBackdrop.style.display = "block";
+      document.body.style.overflow = "hidden";
+      // Highlight table row
+      const targetRow = document.getElementById(`order-row-${orderId}`);
+      if (targetRow) {
+        document.querySelectorAll("tr[id^='order-row-']").forEach((r) => r.classList.remove("selected-row"));
+        targetRow.classList.add("selected-row");
+      }
     }
   }
 
-  // ==========================================
-  // Search Hotkey: '/' to focus search input
-  // ==========================================
+  drawerTriggers.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const orderId = btn.getAttribute("data-order-id");
+      if (orderId) openOrderDrawer(orderId);
+    });
+  });
+
+  drawerCloseButtons.forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      closeAllOrderDrawers();
+    });
+  });
+
+  drawerBackdrop?.addEventListener("click", closeAllOrderDrawers);
+
+  // Check URL hash to open drawer automatically e.g. #order-3 or #order-drawer-3
+  if (window.location.hash) {
+    const orderMatch = window.location.hash.match(/#order-(?:drawer-)?(\d+)/);
+    if (orderMatch && orderMatch[1]) {
+      const orderId = orderMatch[1];
+      // If we are on /admin/orders open the drawer, otherwise highlight the table row
+      if (document.getElementById(`order-drawer-${orderId}`)) {
+        openOrderDrawer(orderId);
+      } else {
+        const orderRow = document.getElementById(`order-${orderId}`) || document.getElementById(`order-row-${orderId}`);
+        if (orderRow) {
+          orderRow.style.outline = "2px solid #111";
+          orderRow.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }
+  }
+
+  // Escape key closes open drawer or modal
   window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeAllOrderDrawers();
+    }
     if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
       const searchInput = document.querySelector(".nav-search-input");
       if (searchInput) {

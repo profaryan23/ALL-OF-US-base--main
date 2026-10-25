@@ -1,8 +1,349 @@
 {% extends "admin_base.html" %}
-{% block module_title %}Orders{% endblock %}{% block module_heading %}Order management{% endblock %}
+{% block module_title %}Orders{% endblock %}
+{% block module_heading %}Order management{% endblock %}
+
 {% block module_content %}
-<section class="admin-section module-section"><div class="admin-section-head"><div><p class="eyebrow">Fulfillment and status</p><h2>All orders</h2></div><form method="get" action="{{ url_for('admin_orders') }}" class="period-filter"><label for="status">Status</label><select id="status" name="status" onchange="this.form.submit()"><option value="">All statuses</option>{% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}<option {% if selected_status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></form></div>
-<div class="table-wrap"><table><thead><tr><th>Order</th><th>Customer</th><th>Date</th><th>Items</th><th>Total</th><th>Status</th><th>Update</th></tr></thead><tbody>{% for order in orders %}<tr><td class="customer-name">#{{ '%04d'|format(order.id) }}</td><td>{{ order.user.first_name }} {{ order.user.last_name }}<small>{{ order.user.email }}</small></td><td>{{ order.created_at.strftime('%b %d, %Y') }}</td><td>{% for item in order.items %}{{ item.quantity }} × {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}{% if not loop.last %}<br>{% endif %}{% endfor %}</td><td>${{ '%.2f'|format(order.total_amount) }}</td><td><span class="status status-{{ order.status|lower }}">{{ order.status }}</span></td><td><form class="status-form" method="post" action="{{ url_for('update_order', order_id=order.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="status" aria-label="Order status">{% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}<option {% if order.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select><button type="submit" class="save-button">Save</button></form></td></tr>{% else %}<tr><td colspan="7" class="table-empty">No orders match this status.</td></tr>{% endfor %}</tbody></table></div></section>
-<section class="admin-section"><div class="admin-section-head"><div><p class="eyebrow">Customer service</p><h2>Shipment & exchange requests</h2><p class="report-note">Requests are reviewed here. Carrier tracking and company exchange terms have not been configured.</p></div></div>
-<div class="table-wrap"><table><thead><tr><th>Request</th><th>Order / Customer</th><th>Submitted</th><th>Customer notes</th><th>Status / Admin note</th></tr></thead><tbody>{% for service_request in service_requests %}<tr><td>{{ service_request.kind }}<small>#{{ service_request.id }}</small></td><td>#{{ '%04d'|format(service_request.order.id) }}<small>{{ service_request.order.user.first_name }} {{ service_request.order.user.last_name }}</small></td><td>{{ service_request.created_at.strftime('%b %d, %Y') }}</td><td>{{ service_request.notes or 'No additional details' }}</td><td><form method="post" action="{{ url_for('update_order_request', request_id=service_request.id) }}" class="request-status-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><select name="status" aria-label="Request status">{% for status in ['Requested', 'Approved', 'Declined', 'Completed'] %}<option {% if service_request.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select><input name="admin_note" maxlength="500" value="{{ service_request.admin_note }}" placeholder="Response / tracking note"><button type="submit" class="save-button">Save</button></form></td></tr>{% else %}<tr><td colspan="5" class="table-empty">No shipment or exchange requests yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="admin-section module-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Fulfillment and status</p>
+      <h2>All orders</h2>
+      <p class="report-note">Click any Order ID (e.g., <code>#0003</code>) to open the deep fulfillment drawer with line-item variants, shipping details, and vendor production tracking.</p>
+    </div>
+    <form method="get" action="{{ url_for('admin_orders') }}" class="period-filter">
+      <label for="status">Status</label>
+      <select id="status" name="status" onchange="this.form.submit()">
+        <option value="">All statuses</option>
+        {% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}
+          <option {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Order</th>
+          <th>Customer</th>
+          <th>Date</th>
+          <th>Items</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th>Update</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr id="order-row-{{ order.id }}">
+          <td class="customer-name">
+            <button type="button" class="order-drawer-trigger" data-order-id="{{ order.id }}" title="Open order deep details drawer">
+              #{{ '%04d'|format(order.id) }} <span class="trigger-icon">↗</span>
+            </button>
+            {% if order.vendor_batch_id %}
+              <small class="batch-badge">Vendor: {{ order.vendor_batch_id }}</small>
+            {% endif %}
+          </td>
+          <td>
+            {{ order.user.first_name }} {{ order.user.last_name }}
+            <small>{{ order.user.email }}</small>
+          </td>
+          <td>{{ order.created_at.strftime('%b %d, %Y') }}</td>
+          <td>
+            {% for item in order.items %}
+              {{ item.quantity }} × {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}{% if not loop.last %}<br>{% endif %}
+            {% endfor %}
+          </td>
+          <td><strong>${{ '%.2f'|format(order.total_amount) }}</strong></td>
+          <td><span class="status status-{{ order.status|lower }}">{{ order.status }}</span></td>
+          <td>
+            <form class="status-form" method="post" action="{{ url_for('update_order', order_id=order.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="status" aria-label="Order status">
+                {% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}
+                  <option {% if order.status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="save-button">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="table-empty">No orders match this status.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Customer Service Requests Section (Unchanged) -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Customer service</p>
+      <h2>Shipment & exchange requests</h2>
+      <p class="report-note">Requests are reviewed here. Carrier tracking and company exchange terms have not been configured.</p>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Request</th>
+          <th>Order / Customer</th>
+          <th>Submitted</th>
+          <th>Customer notes</th>
+          <th>Status / Admin note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for service_request in service_requests %}
+        <tr>
+          <td>{{ service_request.kind }}<small>#{{ service_request.id }}</small></td>
+          <td>#{{ '%04d'|format(service_request.order.id) }}<small>{{ service_request.order.user.first_name }} {{ service_request.order.user.last_name }}</small></td>
+          <td>{{ service_request.created_at.strftime('%b %d, %Y') }}</td>
+          <td>{{ service_request.notes or 'No additional details' }}</td>
+          <td>
+            <form method="post" action="{{ url_for('update_order_request', request_id=service_request.id) }}" class="request-status-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <select name="status" aria-label="Request status">
+                {% for status in ['Requested', 'Approved', 'Declined', 'Completed'] %}
+                  <option {% if service_request.status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+              <input name="admin_note" maxlength="500" value="{{ service_request.admin_note }}" placeholder="Response / tracking note">
+              <button type="submit" class="save-button">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="table-empty">No shipment or exchange requests yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- Slide-over Drawer Backdrop -->
+<div id="order-drawer-backdrop" class="drawer-backdrop" style="display: none;"></div>
+
+<!-- Slide-over Drawers for Each Order -->
+{% for order in orders %}
+<aside id="order-drawer-{{ order.id }}" class="order-slide-drawer" aria-hidden="true" style="display: none;">
+  <div class="drawer-content">
+    
+    <!-- Drawer Header -->
+    <header class="drawer-header">
+      <div>
+        <p class="eyebrow">Order Fulfillment & Vendor Audit</p>
+        <div class="drawer-title-row">
+          <h2>Order #{{ '%04d'|format(order.id) }}</h2>
+          <span class="status status-{{ order.status|lower }}">{{ order.status }}</span>
+        </div>
+        <small class="drawer-meta-time">Placed on {{ order.created_at.strftime('%B %d, %Y at %I:%M %p UTC') }} · Channel: {{ order.channel or 'Online delivery' }}</small>
+      </div>
+      <button type="button" class="drawer-close-btn" data-close-drawer="{{ order.id }}" aria-label="Close drawer">✕</button>
+    </header>
+
+    <div class="drawer-body">
+      
+      <!-- 1. Audit Trail Timeline -->
+      <section class="drawer-box">
+        <h4 class="box-title">Audit Trail & Status Progression</h4>
+        <div class="audit-timeline">
+          <div class="timeline-step {% if order.status in ['Pending', 'Processing', 'Completed'] %}step-completed{% endif %}">
+            <div class="step-marker">1</div>
+            <div class="step-info">
+              <strong>Order Placed</strong>
+              <small>{{ order.created_at.strftime('%b %d, %Y · %H:%M') }}</small>
+            </div>
+          </div>
+          <div class="timeline-connector {% if order.status in ['Processing', 'Completed'] %}connector-active{% endif %}"></div>
+          <div class="timeline-step {% if order.status in ['Processing', 'Completed'] %}step-completed{% elif order.status == 'Pending' %}step-pending{% endif %}">
+            <div class="step-marker">2</div>
+            <div class="step-info">
+              <strong>Vendor Production / Processing</strong>
+              <small>{% if order.vendor_batch_id %}Batch: {{ order.vendor_batch_id }}{% else %}Awaiting Vendor Allocation{% endif %}</small>
+            </div>
+          </div>
+          <div class="timeline-connector {% if order.status == 'Completed' %}connector-active{% endif %}"></div>
+          <div class="timeline-step {% if order.status == 'Completed' %}step-completed{% elif order.status == 'Cancelled' %}step-cancelled{% else %}step-pending{% endif %}">
+            <div class="step-marker">3</div>
+            <div class="step-info">
+              <strong>{% if order.status == 'Cancelled' %}Cancelled{% else %}Shipped & Fulfilled{% endif %}</strong>
+              <small>{% if order.carrier and order.tracking_number %}{{ order.carrier }} #{{ order.tracking_number }}{% elif order.status == 'Completed' %}Delivered / Complete{% else %}Pending fulfillment{% endif %}</small>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Customer & Shipping Details -->
+      <section class="drawer-box">
+        <div class="box-title-row">
+          <h4 class="box-title">Customer & Delivery Details</h4>
+          <a href="{{ url_for('admin_crm') }}#customer-{{ order.user_id }}" class="box-action-link" target="_blank">View in CRM ↗</a>
+        </div>
+        <div class="detail-two-col">
+          <div class="detail-cell">
+            <span class="cell-label">Recipient Name</span>
+            <strong class="cell-val">{{ order.user.first_name }} {{ order.user.last_name }}</strong>
+          </div>
+          <div class="detail-cell">
+            <span class="cell-label">Contact Email</span>
+            <span class="cell-val">{{ order.user.email }}</span>
+          </div>
+          <div class="detail-cell">
+            <span class="cell-label">Phone Number</span>
+            <span class="cell-val">{{ order.user.phone or 'Not provided' }}</span>
+          </div>
+          <div class="detail-cell">
+            <span class="cell-label">Shipping / Delivery Address</span>
+            <span class="cell-val">
+              {% if order.shipping_address %}
+                {{ order.shipping_address }}
+              {% elif order.channel == 'In-store' %}
+                Direct Store Pickup (In-store counter)
+              {% else %}
+                Studio Standard Delivery · Street address recorded in customer profile
+              {% endif %}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. Line Item Variant Breakdown -->
+      <section class="drawer-box">
+        <h4 class="box-title">Line Item Variant Breakdown</h4>
+        <div class="table-wrap drawer-table-wrap">
+          <table class="drawer-table">
+            <thead>
+              <tr>
+                <th>Product & Style</th>
+                <th>Selected Variant</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th style="text-align: right;">Line Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for item in order.items %}
+              <tr>
+                <td>
+                  <strong>{{ item.product.name }}</strong>
+                  <small>{{ item.product.shop_category or item.product.category }}</small>
+                </td>
+                <td>
+                  <span class="variant-tag">{{ item.size_variation or 'Standard' }}</span>
+                </td>
+                <td>{{ item.quantity }}</td>
+                <td>${{ '%.2f'|format(item.price_at_purchase) }}</td>
+                <td style="text-align: right;"><strong>${{ '%.2f'|format(item.price_at_purchase * item.quantity) }}</strong></td>
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="5" class="table-empty">No line items attached to this order.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- 4. Financial Metadata -->
+      <section class="drawer-box">
+        <h4 class="box-title">Financial & Transaction Metadata</h4>
+        <div class="financial-meta-grid">
+          <div class="fin-item">
+            <span>Gateway Transaction Ref</span>
+            <strong>{{ order.gateway_ref or ('TXN-ALLOFUS-' ~ '%04d'|format(order.id) ~ '-OK') }}</strong>
+          </div>
+          <div class="fin-item">
+            <span>Applied Promo / Discount Code</span>
+            <strong>{{ order.promo_code or 'NONE (Standard Pricing)' }}</strong>
+          </div>
+          <div class="fin-item">
+            <span>Discounts Applied</span>
+            <strong>-${{ '%.2f'|format(order.discount_amount or 0.00) }}</strong>
+          </div>
+          <div class="fin-item">
+            <span>Tax Total</span>
+            <strong>${{ '%.2f'|format(order.tax_amount or 0.00) }}</strong>
+          </div>
+          <div class="fin-item fin-total">
+            <span>Final Paid Total</span>
+            <strong>${{ '%.2f'|format(order.total_amount) }}</strong>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Operational Fulfillment & Third-Party Vendor Tracking Form -->
+      <section class="drawer-box drawer-form-box">
+        <div class="box-title-row">
+          <div>
+            <h4 class="box-title">Operational Fulfillment & Vendor Production Tracking</h4>
+            <small style="color: #666; font-size: 9.5px;">Update carrier tracking number, shipping carrier, and third-party manufacturing supplier batch lot.</small>
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('update_order_fulfillment', order_id=order.id) }}" class="fulfillment-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          
+          <div class="drawer-fields-grid">
+            <label>
+              <span>Order Status</span>
+              <select name="status">
+                {% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}
+                  <option value="{{ status }}" {% if order.status == status %}selected{% endif %}>{{ status }}</option>
+                {% endfor %}
+              </select>
+            </label>
+
+            <label>
+              <span>Carrier / Courier Name</span>
+              <input name="carrier" value="{{ order.carrier or '' }}" placeholder="e.g. DHL Express, FedEx, UPS, Local Studio Courier">
+            </label>
+
+            <label>
+              <span>Tracking / Waybill Number</span>
+              <input name="tracking_number" value="{{ order.tracking_number or '' }}" placeholder="e.g. 794829104820">
+            </label>
+
+            <label>
+              <span>Production / Vendor Batch ID</span>
+              <input name="vendor_batch_id" value="{{ order.vendor_batch_id or '' }}" placeholder="e.g. BATCH-HK-TEE-04, PT-VENDOR-77">
+              <small class="field-hint">Supplier manufacturing lot identifying garment factory production run</small>
+            </label>
+
+            <label style="grid-column: 1 / -1;">
+              <span>Delivery / Shipping Address</span>
+              <input name="shipping_address" value="{{ order.shipping_address or '' }}" placeholder="Recipient address, street, city, postal code">
+            </label>
+
+            <label>
+              <span>Gateway Transaction Ref ID</span>
+              <input name="gateway_ref" value="{{ order.gateway_ref or '' }}" placeholder="e.g. ch_3M52k92eZvKYlo2C">
+            </label>
+
+            <label>
+              <span>Applied Promo / Coupon Code</span>
+              <input name="promo_code" value="{{ order.promo_code or '' }}" placeholder="e.g. STREET10, VIP-DROP">
+            </label>
+          </div>
+
+          <div class="drawer-actions-bar">
+            <button type="submit" class="button button-dark">Save Fulfillment & Batch Details</button>
+            <button type="button" class="button button-outline" data-close-drawer="{{ order.id }}">Cancel</button>
+          </div>
+        </form>
+      </section>
+
+    </div>
+  </div>
+</aside>
+{% endfor %}
+
 {% endblock %}
