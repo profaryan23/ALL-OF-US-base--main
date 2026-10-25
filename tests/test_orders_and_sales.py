@@ -8,16 +8,76 @@ import main
 class OrderAndSalesManagementTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        main.Base.metadata.create_all(main.engine)
+        main.seed_database()
         main.migrate_catalog_schema()
         cls.client = TestClient(main.app)
 
-        # Login as admin
-        login_res = cls.client.post(
-            "/login",
-            data={"email": "team@allofus.internal", "password": "changethisnow"},
+        email = "orders-sales-admin@example.com"
+        password = "strong-admin-password-test"
+        with main.SessionLocal() as db:
+            admin = db.query(main.User).filter_by(email=email).first()
+            if not admin:
+                admin = main.User(
+                    email=email,
+                    password_hash=main.generate_password_hash(password),
+                    first_name="Admin",
+                    last_name="Sales",
+                    role="admin",
+                )
+                db.add(admin)
+                db.commit()
+
+        login_res = cls.client.get("/admin/login")
+        import re
+        match = re.search(r'name="csrf_token"\s+value="([^"]+)"', login_res.text)
+        csrf_token = match.group(1) if match else ""
+        cls.client.post(
+            "/admin/login",
+            data={"email": email, "password": password, "csrf_token": csrf_token},
             follow_redirects=True,
         )
-        assert login_res.status_code == 200
+
+        with main.SessionLocal() as db:
+            if not db.query(main.Order).first():
+                customer = db.query(main.User).filter_by(role="customer").first()
+                if not customer:
+                    customer = main.User(
+                        email="customer@example.com",
+                        password_hash=main.generate_password_hash("customer-pass"),
+                        first_name="Jane",
+                        last_name="Doe",
+                        role="customer",
+                    )
+                    db.add(customer)
+                    db.commit()
+                product = db.query(main.Product).first()
+                if not product:
+                    product = main.Product(
+                        name="Classic Tee",
+                        category="Clothing",
+                        shop_category="Everyday",
+                        price=Decimal("45.00"),
+                        stock_quantity=10,
+                        size_variations="M, L",
+                    )
+                    db.add(product)
+                    db.commit()
+                test_order = main.Order(
+                    user_id=customer.id,
+                    total_amount=Decimal("45.00"),
+                    status="Pending",
+                    channel="Online delivery",
+                )
+                db.add(test_order)
+                db.flush()
+                test_order.items.append(main.OrderItem(
+                    product_id=product.id,
+                    quantity=1,
+                    price_at_purchase=Decimal("45.00"),
+                    size_variation="M",
+                ))
+                db.commit()
 
     def test_admin_orders_page_and_drawer_triggers(self):
         res = self.client.get("/admin/orders")
@@ -25,9 +85,9 @@ class OrderAndSalesManagementTests(unittest.TestCase):
         # Check drawer triggers exist in the table
         self.assertIn("order-drawer-trigger", res.text)
         self.assertIn("order-slide-drawer", res.text)
-        self.assertIn("Audit Trail &amp; Status Progression", res.text)
+        self.assertIn("Audit Trail & Status Progression", res.text)
         self.assertIn("Line Item Variant Breakdown", res.text)
-        self.assertIn("Operational Fulfillment &amp; Vendor Production Tracking", res.text)
+        self.assertIn("Operational Fulfillment & Vendor Production Tracking", res.text)
         self.assertIn("vendor_batch_id", res.text)
         self.assertIn("tracking_number", res.text)
 
@@ -83,7 +143,7 @@ class OrderAndSalesManagementTests(unittest.TestCase):
         self.assertIn("Average Order Value (AOV)", res30.text)
         self.assertIn("Total Units Sold", res30.text)
         self.assertIn("Est. Manufacturing Margin", res30.text)
-        self.assertIn("Product &amp; Variant Performance", res30.text)
+        self.assertIn("Product & Variant Performance", res30.text)
         self.assertIn("Vendor COGS (Unit)", res30.text)
         self.assertIn("Gross Margin (%)", res30.text)
         self.assertIn("Transaction Ledger", res30.text)
@@ -104,9 +164,9 @@ class OrderAndSalesManagementTests(unittest.TestCase):
         self.assertIn("Transaction ID", csv_content)
         self.assertIn("Order Date (UTC)", csv_content)
         self.assertIn("Customer Name", csv_content)
-        self.assertIn("Gross Subtotal ($)", csv_content)
-        self.assertIn("Estimated COGS ($)", csv_content)
-        self.assertIn("Gross Profit ($)", csv_content)
+        self.assertIn("Gross Subtotal (Rs)", csv_content)
+        self.assertIn("Estimated COGS (Rs)", csv_content)
+        self.assertIn("Gross Profit (Rs)", csv_content)
         self.assertIn("Carrier", csv_content)
         self.assertIn("Tracking Number", csv_content)
         self.assertIn("Vendor Batch ID", csv_content)

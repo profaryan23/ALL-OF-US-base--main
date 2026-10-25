@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hmac
 import io
+import json
 import logging
 import os
 import re
@@ -11,7 +12,7 @@ import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote, unquote, urlencode
@@ -94,13 +95,74 @@ def product_sizes(product: Product) -> list[str]:
     return [value.strip() for value in product.size_variations.split(",") if value.strip()]
 
 
+SIZE_CHOICES = [(str(size), str(size)) for size in range(28, 35)] + [
+    ("M", "Medium (M)"), ("L", "Large (L)"), ("XL", "Extra Large (XL)"),
+]
+
+
+def product_colors(product) -> list[dict]:
+    return json.loads(product.color_variations or "[]")
+
+
+def money(value) -> Decimal:
+    return Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def percentage(value) -> Decimal:
+    result = Decimal(str(value))
+    if not result.is_finite() or not 0 <= result <= 100:
+        raise ValueError("Percentages must be between 0 and 100.")
+    return money(result)
+
+
+def filter_agent_orders(query, request):
+    selected = request.query_params.get("agent_id", "")
+    if selected == "direct":
+        return query.filter(Order.agent_id.is_(None))
+    if selected:
+        if not selected.isdigit():
+            raise HTTPException(status_code=400, detail="Invalid agent filter")
+        return query.filter(Order.agent_id == int(selected))
+    return query
+
+
+async def read_product_colors(form, product=None):
+    names = form.getlist("color_name")
+    if len(names) > 20:
+        raise ValueError("Use no more than 20 colors per product.")
+    existing = {c["name"]: c for c in product_colors(product)} if product else {}
+    colors, seen = [], set()
+    # Validate every image before writing any files.
+    images = []
+    for index, raw_name in enumerate(names):
+        name = str(raw_name).strip()
+        if not name:
+            continue
+        if len(name) > 60 or name.casefold() in seen:
+            raise ValueError("Color names must be unique and at most 60 characters.")
+        seen.add(name.casefold())
+        photo = await read_product_image({"photo": form.get(f"color_photo_{index}")})
+        colors.append({"name": name, "photo_path": existing.get(name, {}).get("photo_path", "")})
+        images.append(photo)
+    for color, image in zip(colors, images):
+        if image:
+            color["photo_path"] = save_product_image(image)
+    return json.dumps(colors)
+
+
 def cart_product_and_size(line_key: str) -> tuple[int, str]:
     product_id, separator, size = line_key.partition(":")
-    return int(product_id), unquote(size) if separator else ""
+    return int(product_id), unquote(size.split(":", 1)[0]) if separator else ""
 
 
-def cart_line_key(product_id: int, size: str) -> str:
-    return f"{product_id}:{quote(size, safe='')}"
+def cart_line_key(product_id: int, size: str, color: str = "") -> str:
+    key = f"{product_id}:{quote(size, safe='')}"
+    return f"{key}:{quote(color, safe='')}" if color else key
+
+
+def cart_color(line_key):
+    parts = line_key.split(":", 2)
+    return unquote(parts[2]) if len(parts) == 3 else ""
 
 
 async def read_product_image(form) -> tuple[str, bytes] | None:
@@ -136,6 +198,8 @@ def parse_product_fields(form) -> dict:
     description = str(form.get("description", "")).strip()
     raw_sizes = str(form.get("size_variations", "")).replace("\n", ",")
     sizes = list(dict.fromkeys(value.strip() for value in raw_sizes.split(",") if value.strip()))
+    if form.get("size_choices_present"):
+        sizes = list(dict.fromkeys(form.getlist("sizes") + sizes))
     if (
         not name or len(name) > 140
         or not category or len(category) > 100
@@ -173,6 +237,7 @@ def parse_product_fields(form) -> dict:
 def migrate_catalog_schema():
     migrations = {
         "products": {
+            "color_variations": "TEXT NOT NULL DEFAULT '[]'",
             "category": "VARCHAR(100) NOT NULL DEFAULT ''",
             "shop_category": "VARCHAR(100) NOT NULL DEFAULT ''",
             "photo_path": "VARCHAR(255) NOT NULL DEFAULT ''",
@@ -180,9 +245,16 @@ def migrate_catalog_schema():
             "cogs": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
         },
         "order_items": {
+            "color_variation": "VARCHAR(60) NOT NULL DEFAULT ''",
+            "allocation_id": "INTEGER REFERENCES agent_allocations(id)",
+            "agent_unit_cost": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
+            "company_discount_percent": "NUMERIC(5, 2) NOT NULL DEFAULT 0.00",
+            "commission_percent": "NUMERIC(5, 2) NOT NULL DEFAULT 0.00",
+            "commission_amount": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
             "size_variation": "VARCHAR(80) NOT NULL DEFAULT ''",
         },
         "orders": {
+            "agent_id": "INTEGER REFERENCES agents(id)",
             "channel": "VARCHAR(40) NOT NULL DEFAULT 'Online delivery'",
             "carrier": "VARCHAR(100) NOT NULL DEFAULT ''",
             "tracking_number": "VARCHAR(120) NOT NULL DEFAULT ''",
@@ -239,6 +311,7 @@ class Product(Base):
     photo_path: Mapped[str] = mapped_column(String(255), default="")
     description: Mapped[str] = mapped_column(Text, default="")
     size_variations: Mapped[str] = mapped_column(Text, default="")
+    color_variations: Mapped[str] = mapped_column(Text, default="[]")
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     cogs: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
@@ -246,10 +319,38 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Agent(Base):
+    __tablename__ = "agents"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(140))
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    email: Mapped[str] = mapped_column(String(255), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AgentAllocation(Base):
+    __tablename__ = "agent_allocations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    agent_id: Mapped[int] = mapped_column(ForeignKey("agents.id"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[int] = mapped_column(Integer)
+    remaining: Mapped[int] = mapped_column(Integer)
+    size_variation: Mapped[str] = mapped_column(String(80), default="")
+    color_variation: Mapped[str] = mapped_column(String(60), default="")
+    list_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    company_discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    agent: Mapped[Agent] = relationship()
+    product: Mapped[Product] = relationship()
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    agent_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    agent: Mapped[Agent | None] = relationship()
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(String(24), default="Pending")
     channel: Mapped[str] = mapped_column(String(40), default="Online delivery")
@@ -274,6 +375,12 @@ class OrderItem(Base):
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
     quantity: Mapped[int] = mapped_column(Integer)
     size_variation: Mapped[str] = mapped_column(String(80), default="")
+    color_variation: Mapped[str] = mapped_column(String(60), default="")
+    allocation_id: Mapped[int | None] = mapped_column(ForeignKey("agent_allocations.id"), nullable=True)
+    agent_unit_cost: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    company_discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    commission_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
+    commission_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     price_at_purchase: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     order: Mapped[Order] = relationship(back_populates="items")
     product: Mapped[Product] = relationship()
@@ -525,6 +632,10 @@ def template_context(request: Request):
         "csrf_token": csrf_token,
         "get_flashed_messages": get_flashed_messages,
         "url_for": template_url_for,
+        "size_choices": SIZE_CHOICES,
+        "product_colors": product_colors,
+        "agents": db.query(Agent).order_by(Agent.name).all(),
+        "selected_agent": request.query_params.get("agent_id", ""),
     }
 
 
@@ -535,6 +646,7 @@ ADMIN_MODULES = {
     "content": ("Content", "admin_content"),
     "crm": ("CRM", "admin_crm"),
     "inventory": ("Inventory", "admin_inventory"),
+    "agents": ("Agents", "admin_agents"),
     "sales": ("Sales", "admin_sales"),
     "orders": ("Orders", "admin_orders"),
     "analytics": ("Website analytics", "admin_analytics"),
@@ -788,13 +900,17 @@ async def add_to_cart(product_id: int, request: Request, db: Annotated[Session, 
         raise HTTPException(status_code=404, detail="Product not found")
     form = await request.form()
     selected_size = str(form.get("size_variation", "")).strip()
+    selected_color = str(form.get("color_variation", "")).strip()
+    colors = [c["name"] for c in product_colors(product)]
+    if (colors and selected_color not in colors) or (not colors and selected_color):
+        raise HTTPException(status_code=400, detail="Choose an available color.")
     available_sizes = product_sizes(product)
     if available_sizes and selected_size not in available_sizes:
         raise HTTPException(status_code=400, detail="Choose an available size variation.")
     if not available_sizes and selected_size:
         raise HTTPException(status_code=400, detail="This product does not have size variations.")
     cart = request.session.get("cart", {})
-    line_key = cart_line_key(product_id, selected_size)
+    line_key = cart_line_key(product_id, selected_size, selected_color)
     product_quantity = 0
     for existing_key, quantity in cart.items():
         try:
@@ -831,6 +947,8 @@ def cart_page(request: Request, db: Annotated[Session, Depends(get_db)]):
             lines.append({
                 "product": product, "quantity": quantity, "subtotal": subtotal,
                 "size_variation": size, "cart_key": line_key,
+                "color_variation": cart_color(line_key),
+                "photo_path": next((c["photo_path"] for c in product_colors(product) if c["name"] == cart_color(line_key)), "") or product.photo_path,
             })
             total += subtotal
     return page(request, "cart.html", lines=lines, total=total)
@@ -885,17 +1003,23 @@ def checkout(request: Request, user: Annotated[User, Depends(require_user)], db:
         if product.stock_quantity < product_quantities[product_id]:
             request.session["flash"] = ["error", "Inventory changed while you were shopping. Please review your bag."]
             return safe_redirect(request, "cart_view")
-        if size and size not in product_sizes(product):
+        if (product_sizes(product) and size not in product_sizes(product)) or (size and not product_sizes(product)):
             request.session["flash"] = ["error", "A selected product size is no longer available."]
             return safe_redirect(request, "cart_view")
-        validated.append((product, quantity, size))
+        color = cart_color(line_key)
+        colors = [c["name"] for c in product_colors(product)]
+        if (colors and color not in colors) or (not colors and color):
+            request.session["flash"] = ["error", "A selected product color is no longer available."]
+            return safe_redirect(request, "cart_view")
+        validated.append((product, quantity, size, color))
         total += product.price * quantity
     order = Order(user_id=user.id, total_amount=total, status="Pending")
     db.add(order)
-    for product, quantity, size in validated:
+    for product, quantity, size, color in validated:
         order.items.append(OrderItem(
             product=product, quantity=quantity,
             size_variation=size, price_at_purchase=product.price,
+            color_variation=color,
         ))
         product.stock_quantity -= quantity
     db.commit()
@@ -1051,7 +1175,7 @@ def admin_reports(request: Request, _admin: Annotated[User, Depends(require_admi
         period = "30"
     since = datetime.utcnow() - timedelta(days=int(period)) if period != "all" else None
 
-    orders_query = db.query(Order)
+    orders_query = filter_agent_orders(db.query(Order), request)
     if since:
         orders_query = orders_query.filter(Order.created_at >= since)
     period_orders = orders_query.all()
@@ -1062,7 +1186,7 @@ def admin_reports(request: Request, _admin: Annotated[User, Depends(require_admi
         for status in ("Pending", "Processing", "Completed", "Cancelled")
     }
 
-    item_query = db.query(OrderItem).join(Order).filter(Order.status != "Cancelled")
+    item_query = filter_agent_orders(db.query(OrderItem).join(Order).filter(Order.status != "Cancelled"), request)
     if since:
         item_query = item_query.filter(Order.created_at >= since)
     product_totals = {}
@@ -1128,18 +1252,22 @@ def admin_reports(request: Request, _admin: Annotated[User, Depends(require_admi
         visitors=visitors,
         conversion=round(purchases * 100 / visitors, 1) if visitors else 0,
         max_daily=max(daily_totals.values(), default=Decimal("0.00")),
+        agent_commission=sum((item.commission_amount for order in sales_orders if order.status == "Completed" for item in order.items), Decimal("0.00")),
     )
 
 
 @app.get("/admin/crm", name="admin_crm", response_class=HTMLResponse)
 def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     customers = filtered_customers(db, request)
+    if request.query_params.get("agent_id"):
+        customer_ids = {row[0] for row in filter_agent_orders(db.query(Order.user_id), request).all()}
+        customers = [customer for customer in customers if customer.id in customer_ids]
     all_customers = db.query(User).filter_by(role="customer").all()
     opt_in_count = sum(customer.marketing_opt_in for customer in all_customers)
     customer_spends = [sum((order.total_amount for order in customer.orders), Decimal("0.00")) for customer in all_customers]
     band_counts = [sum(spend == 0 for spend in customer_spends), sum(0 < spend < 50 for spend in customer_spends),
                    sum(50 <= spend < 200 for spend in customer_spends), sum(spend >= 200 for spend in customer_spends)]
-    band_labels = ["No spend", "Under $50", "$50-$199", "$200+"]
+    band_labels = ["No spend", "Under Rs 50", "Rs 50–Rs 199", "Rs 200+"]
     clv_distribution = [
         {"label": label, "count": count, "percent": round(count * 100 / len(all_customers)) if all_customers else 0}
         for label, count in zip(band_labels, band_counts)
@@ -1147,7 +1275,8 @@ def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)],
     revenue = db.query(func.coalesce(func.sum(Order.total_amount), 0)).scalar()
     customer_rows = [
         {"customer": customer, "order_count": len(customer.orders),
-         "spend": sum((order.total_amount for order in customer.orders), Decimal("0.00"))}
+         "spend": sum((order.total_amount for order in customer.orders), Decimal("0.00")),
+         "agent_names": ", ".join(sorted({order.agent.name for order in customer.orders if order.agent}))}
         for customer in customers
     ]
     return page(
@@ -1165,7 +1294,64 @@ def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)],
 def admin_inventory(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     products = db.query(Product).order_by(Product.id.desc()).all()
     ordered_product_ids = {row[0] for row in db.query(OrderItem.product_id).distinct().all()}
+    ordered_product_ids.update(row[0] for row in db.query(AgentAllocation.product_id).distinct().all())
     return page(request, "admin_inventory.html", products=products, ordered_product_ids=ordered_product_ids)
+
+
+@app.get("/admin/agents", name="admin_agents", response_class=HTMLResponse)
+def admin_agents(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    agents = db.query(Agent).order_by(Agent.name).all()
+    sales = db.query(Order).filter(Order.agent_id.is_not(None), Order.status == "Completed").all()
+    rows = []
+    for agent in agents:
+        orders = [o for o in sales if o.agent_id == agent.id]
+        items = [i for o in orders for i in o.items]
+        rows.append({"agent": agent, "units": sum(i.quantity for i in items),
+                     "revenue": sum((o.total_amount for o in orders), Decimal("0.00")),
+                     "commission": sum((i.commission_amount for i in items), Decimal("0.00"))})
+    rows.sort(key=lambda row: (row["units"], row["revenue"]), reverse=True)
+    return page(request, "admin_agents.html", leaderboard=rows,
+                allocations=db.query(AgentAllocation).order_by(AgentAllocation.id.desc()).all(),
+                agent_orders=db.query(Order).filter(Order.agent_id.is_not(None)).order_by(Order.id.desc()).all(),
+                products=db.query(Product).filter_by(is_active=True).order_by(Product.name).all())
+
+
+@app.post("/admin/agents", name="create_agent", dependencies=[Depends(verify_csrf)])
+async def create_agent(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    name, phone, email = (str(form.get(field, "")).strip() for field in ("name", "phone", "email"))
+    if not name or len(name) > 140 or len(phone) > 40 or len(email) > 255:
+        raise HTTPException(status_code=400, detail="Enter valid agent contact details.")
+    db.add(Agent(name=name, phone=phone, email=email))
+    db.commit()
+    request.session["flash"] = ["success", "Agent created separately from customer CRM."]
+    return RedirectResponse("/admin/agents", status_code=303)
+
+
+@app.post("/admin/agents/allocate", name="allocate_agent_stock", dependencies=[Depends(verify_csrf)])
+async def allocate_agent_stock(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    try:
+        agent = db.get(Agent, int(form.get("agent_id", "0")))
+        product = db.query(Product).filter_by(id=int(form.get("product_id", "0"))).with_for_update().first()
+        quantity = int(form.get("quantity", "0"))
+        discount = percentage(form.get("company_discount_percent", "10"))
+        size, color = (str(form.get(field, "")).strip() for field in ("size_variation", "color_variation"))
+        if not agent or not agent.is_active or not product or not product.is_active or not 0 < quantity <= product.stock_quantity:
+            raise ValueError("Choose an active agent, product and available quantity.")
+        sizes, colors = product_sizes(product), [c["name"] for c in product_colors(product)]
+        if (sizes and size not in sizes) or (not sizes and size) or (colors and color not in colors) or (not colors and color):
+            raise ValueError("Choose an available size and color.")
+    except (InvalidOperation, ValueError) as error:
+        request.session["flash"] = ["error", str(error)]
+        return RedirectResponse("/admin/agents", status_code=303)
+    db.add(AgentAllocation(agent_id=agent.id, product_id=product.id, quantity=quantity, remaining=quantity,
+                           size_variation=size, color_variation=color, list_price=product.price,
+                           company_discount_percent=discount, unit_cost=money(product.price * (1 - discount / 100))))
+    product.stock_quantity -= quantity
+    db.commit()
+    request.session["flash"] = ["success", "Stock issued to agent. Record its eventual selling price in Sales."]
+    return RedirectResponse("/admin/agents", status_code=303)
 
 
 @app.get("/admin/inventory/new", name="admin_product_new", response_class=HTMLResponse)
@@ -1203,6 +1389,7 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
                 "content": "Website pages, publishing, contact messages",
                 "crm": "Customers, email, phone, marketing preferences, purchase history",
                 "inventory": "Products, categories, prices, sizes, stock, add, edit, delete",
+                "agents": "Agent leaderboard, allocations, acquisition costs, sales, commission",
                 "sales": "Revenue, daily sales, best sellers, units sold",
                 "orders": "Order status, fulfillment, shipment and exchange requests",
                 "analytics": "Website visitors, page views, cart activity, conversion, SEO",
@@ -1210,6 +1397,10 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
             }
             for key, (label, endpoint) in ADMIN_MODULES.items():
                 add_result(label, descriptions[key], endpoint, item_module="overview")
+
+        if module in {"all", "agents"}:
+            for agent in db.query(Agent).all():
+                add_result(agent.name, f"{agent.email} {agent.phone}", "admin_agents", item_module="agents", anchor=f"#agent-{agent.id}")
 
         if module in {"all", "content"}:
             for item in db.query(PageContent).all():
@@ -1227,7 +1418,7 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
             if module in {"sales", "reports"}:
                 products_query = products_query.join(OrderItem).join(Order).filter(Order.status != "Cancelled").distinct()
             for item in products_query.order_by(Product.id.desc()).all():
-                detail = f"#{item.id} · {item.category} · {item.shop_category} · ${item.price:.2f} · {item.stock_quantity} units · {item.size_variations} · {item.description}"
+                detail = f"#{item.id} · {item.category} · {item.shop_category} · Rs {item.price:.2f} · {item.stock_quantity} units · {item.size_variations} · {item.description}"
                 endpoint = "admin_inventory" if module in {"all", "inventory"} else ADMIN_MODULES[module][1]
                 anchor = f"#product-{item.id}" if module in {"all", "inventory"} else ""
                 res_mod = "inventory" if module == "all" else module
@@ -1236,7 +1427,7 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
         if module in {"all", "orders"}:
             for item in db.query(Order).order_by(Order.created_at.desc()).all():
                 names = ", ".join(line.product.name for line in item.items)
-                detail = f"{item.status} · {item.user.first_name} {item.user.last_name} · {item.user.email} · ${item.total_amount:.2f} · {names}"
+                detail = f"{item.status} · {item.user.first_name} {item.user.last_name} · {item.user.email} · Rs {item.total_amount:.2f} · {names}"
                 add_result(f"Order #{item.id}", detail, "admin_orders", anchor=f"#order-{item.id}", item_module="orders")
             for item in db.query(OrderServiceRequest).all():
                 add_result(f"{item.kind} request · Order #{item.order_id}", f"{item.status} · {item.notes} · {item.admin_note}", "admin_orders", item_module="orders")
@@ -1283,12 +1474,12 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
     else:
         since = None
 
-    orders_query = db.query(Order).filter(Order.status != "Cancelled")
+    orders_query = filter_agent_orders(db.query(Order).filter(Order.status != "Cancelled"), request)
     if since:
         orders_query = orders_query.filter(Order.created_at >= since)
     orders = orders_query.order_by(Order.created_at.desc()).all()
 
-    items_query = db.query(OrderItem).join(Order).filter(Order.status != "Cancelled")
+    items_query = filter_agent_orders(db.query(OrderItem).join(Order).filter(Order.status != "Cancelled"), request)
     if since:
         items_query = items_query.filter(Order.created_at >= since)
     order_items = items_query.all()
@@ -1326,11 +1517,11 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         row["cogs"] += line_cogs
 
         # Variant-level breakdown (e.g. Grey Henley - Size L)
-        variant_key = f"{prod.id}::{item.size_variation or 'Standard'}"
+        variant_key = f"{prod.id}::{item.size_variation or 'Standard'}::{item.color_variation}"
         vrow = variant_sales.setdefault(variant_key, {
             "product_id": prod.id,
             "product_name": prod.name,
-            "size": item.size_variation or "Standard",
+            "size": f"{item.size_variation or 'Standard'} / {item.color_variation}" if item.color_variation else item.size_variation or "Standard",
             "category": getattr(prod, "shop_category", prod.category),
             "units": 0,
             "gross_revenue": Decimal("0.00"),
@@ -1400,6 +1591,8 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         store_revenue=store_revenue, online_revenue=online_revenue,
         store_orders_count=len(store_orders), online_orders_count=len(online_orders),
         all_products=all_products, all_customers=all_customers,
+        allocations=db.query(AgentAllocation).filter(AgentAllocation.remaining > 0).all(),
+        agent_commission=sum((item.commission_amount for item in order_items if item.order.status == "Completed"), Decimal("0.00")),
     )
 
 
@@ -1421,7 +1614,7 @@ def export_sales(
     elif period == "90":
         since = now - timedelta(days=90)
 
-    orders_query = db.query(Order).order_by(Order.created_at.desc())
+    orders_query = filter_agent_orders(db.query(Order).order_by(Order.created_at.desc()), request)
     if since:
         orders_query = orders_query.filter(Order.created_at >= since)
     orders = orders_query.all()
@@ -1436,16 +1629,17 @@ def export_sales(
         "Customer Email",
         "Status",
         "Items Sold",
-        "Gross Subtotal ($)",
-        "Discounts ($)",
-        "Tax ($)",
-        "Total Revenue ($)",
-        "Estimated COGS ($)",
-        "Gross Profit ($)",
+        "Gross Subtotal (Rs)",
+        "Discounts (Rs)",
+        "Tax (Rs)",
+        "Total Revenue (Rs)",
+        "Estimated COGS (Rs)",
+        "Gross Profit (Rs)",
         "Carrier",
         "Tracking Number",
         "Vendor Batch ID",
         "Gateway Ref",
+        "Agent", "Agent Acquisition Cost (Rs)", "Company Discount (%)", "Agent Commission (%)", "Agent Commission (Rs)",
     ])
 
     for o in orders:
@@ -1454,7 +1648,7 @@ def export_sales(
         for it in o.items:
             unit_c = it.product.cogs if (getattr(it.product, "cogs", None) and it.product.cogs > 0) else (it.product.price * Decimal("0.38"))
             cogs += unit_c * it.quantity
-            var_label = f" ({it.size_variation})" if it.size_variation else ""
+            var_label = f" ({it.size_variation} / {it.color_variation})"
             item_descs.append(f"{it.quantity}x {it.product.name}{var_label}")
 
         cust_name = f"{o.user.first_name} {o.user.last_name}" if o.user else "Direct Customer"
@@ -1482,6 +1676,11 @@ def export_sales(
             getattr(o, "tracking_number", "") or "",
             getattr(o, "vendor_batch_id", "") or "",
             getattr(o, "gateway_ref", "") or "",
+            o.agent.name if o.agent else "Direct sale",
+            f"{sum((i.agent_unit_cost * i.quantity for i in o.items), Decimal('0.00')):.2f}",
+            "; ".join(str(i.company_discount_percent) for i in o.items),
+            "; ".join(str(i.commission_percent) for i in o.items),
+            f"{sum((i.commission_amount for i in o.items), Decimal('0.00')):.2f}",
         ])
 
     return Response(
@@ -1518,18 +1717,44 @@ async def record_sale(
         request.session["flash"] = ["error", "Product not found."]
         return RedirectResponse("/admin/sales", status_code=303)
 
-    size_variation = str(form.get("size_variation", "")).strip()[:80]
-
+    allocation = None
+    agent = None
+    size_variation = str(form.get("size_variation", "")).strip()
+    color_variation = str(form.get("color_variation", "")).strip()
     raw_price = form.get("price")
     try:
-        if raw_price:
-            unit_price = Decimal(str(raw_price))
-            if unit_price <= 0:
-                unit_price = product.price
+        unit_price = money(raw_price or product.price)
+        if not unit_price.is_finite() or unit_price <= 0:
+            raise ValueError("Enter a positive selling price.")
+        company_discount = percentage(form.get("company_discount_percent", "10"))
+        commission_percent = percentage(form.get("commission_percent", "10"))
+        if form.get("agent_id"):
+            agent = db.get(Agent, int(form["agent_id"]))
+            if not agent or not agent.is_active:
+                raise ValueError("Choose an active agent.")
+        if form.get("allocation_id"):
+            allocation = db.query(AgentAllocation).filter_by(id=int(form["allocation_id"])).with_for_update().first()
+            if not allocation or not agent or allocation.agent_id != agent.id or allocation.product_id != product.id:
+                raise ValueError("Choose an allocation belonging to this agent and product.")
+            if allocation.remaining < quantity:
+                raise ValueError("The agent does not hold enough units in this allocation.")
+            size_variation, color_variation = allocation.size_variation, allocation.color_variation
+            company_discount = allocation.company_discount_percent
+            agent_cost = allocation.unit_cost
         else:
-            unit_price = product.price
+            product = db.query(Product).filter_by(id=product.id).with_for_update().first()
+            if not product.is_active or quantity > product.stock_quantity:
+                raise ValueError("Not enough active inventory for this sale.")
+            agent_cost = money(product.price * (1 - company_discount / 100)) if agent else Decimal("0.00")
+            sizes = product_sizes(product)
+            colors = [c["name"] for c in product_colors(product)]
+            if (sizes and size_variation not in sizes) or (not sizes and size_variation):
+                raise ValueError("Choose an available size.")
+            if (colors and color_variation not in colors) or (not colors and color_variation):
+                raise ValueError("Choose an available color.")
     except (InvalidOperation, ValueError):
-        unit_price = product.price
+        request.session["flash"] = ["error", "Check price, percentages, stock, agent allocation, size and color selections."]
+        return RedirectResponse("/admin/sales", status_code=303)
 
     status = str(form.get("status", "Completed")).strip()
     if status not in {"Completed", "Processing", "Pending"}:
@@ -1586,6 +1811,7 @@ async def record_sale(
         total_amount=total_amount,
         status=status,
         channel=channel,
+        agent_id=agent.id if agent else None,
     )
     db.add(order)
     db.flush()
@@ -1596,11 +1822,20 @@ async def record_sale(
         quantity=quantity,
         size_variation=size_variation,
         price_at_purchase=unit_price,
+        color_variation=color_variation,
+        allocation_id=allocation.id if allocation else None,
+        agent_unit_cost=agent_cost,
+        company_discount_percent=company_discount if agent else Decimal("0.00"),
+        commission_percent=commission_percent if agent else Decimal("0.00"),
+        commission_amount=money(total_amount * commission_percent / 100) if agent else Decimal("0.00"),
     )
     db.add(order_item)
 
     # Deduct product stock
-    product.stock_quantity = max(0, product.stock_quantity - quantity)
+    if allocation:
+        allocation.remaining -= quantity
+    else:
+        product.stock_quantity -= quantity
 
     # Track purchase event
     track_event(db, request, "purchase", product_id=product.id)
@@ -1609,14 +1844,14 @@ async def record_sale(
 
     request.session["flash"] = [
         "success",
-        f"Sale recorded: {quantity}x {product.name} (${total_amount:.2f}) via {channel}. Customer {customer.first_name} {customer.last_name} ({customer.email}) saved to CRM.",
+        f"Sale recorded: {quantity}x {product.name} (Rs {total_amount:.2f}) via {channel}. Customer {customer.first_name} {customer.last_name} ({customer.email}) saved to CRM.",
     ]
     return RedirectResponse(f"/admin/sales#order-{order.id}", status_code=303)
 
 
 @app.get("/admin/orders", name="admin_orders", response_class=HTMLResponse)
 def admin_orders(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
-    query = db.query(Order).order_by(Order.created_at.desc())
+    query = filter_agent_orders(db.query(Order).order_by(Order.created_at.desc()), request)
     status = request.query_params.get("status", "")
     if status in {"Pending", "Processing", "Completed", "Cancelled"}:
         query = query.filter_by(status=status)
@@ -1710,6 +1945,7 @@ async def create_product(request: Request, _admin: Annotated[User, Depends(requi
     try:
         product_values = parse_product_fields(form)
         image = await read_product_image(form)
+        product_values["color_variations"] = await read_product_colors(form)
     except (InvalidOperation, ValueError) as error:
         form_data = {key: str(form.get(key, "")) for key in (
             "name", "category", "shop_category", "price", "stock_quantity", "size_variations", "description", "is_active"
@@ -1737,6 +1973,8 @@ async def update_product(product_id: int, request: Request, _admin: Annotated[Us
     try:
         product_values = parse_product_fields(form)
         image = await read_product_image(form)
+        if "colors_present" in form:
+            product_values["color_variations"] = await read_product_colors(form, product)
     except (InvalidOperation, ValueError) as error:
         request.session["flash"] = ["error", str(error) or "Enter valid product details."]
         return RedirectResponse("/admin/inventory", status_code=303)
@@ -1756,7 +1994,7 @@ async def delete_product(product_id: int, request: Request, _admin: Annotated[Us
     product = db.get(Product, product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    if db.query(OrderItem).filter_by(product_id=product_id).first():
+    if db.query(OrderItem).filter_by(product_id=product_id).first() or db.query(AgentAllocation).filter_by(product_id=product_id).first():
         request.session["flash"] = ["error", "This product belongs to past orders and cannot be deleted. Uncheck Active in shop and save to hide it instead."]
         return RedirectResponse(f"/admin/inventory#product-{product_id}", status_code=303)
     # Keep aggregate event history without leaving dangling product references.

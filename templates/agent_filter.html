@@ -1,0 +1,6 @@
+<label>Agent / Direct sales
+<select name="agent_id" onchange="this.form.submit()">
+  <option value="">All agents &amp; direct sales</option>
+  <option value="direct" {% if selected_agent == 'direct' %}selected{% endif %}>Direct sales only</option>
+  {% for agent in agents %}<option value="{{ agent.id }}" {% if selected_agent == agent.id|string %}selected{% endif %}>{{ agent.name }}</option>{% endfor %}
+</select></label>

@@ -14,7 +14,7 @@
       <p>{{ product.description }}</p>
       {% if product.stock_quantity == 0 %}<span class="product-stock-status">Sold out</span>{% endif %}
     </div>
-    <span class="price">${{ '%.2f'|format(product.price) }}</span>
+    <span class="price">Rs {{ '%.2f'|format(product.price) }}</span>
   </div>
   <a class="add-button product-details-link" href="{{ url_for('product_detail', product_id=product.id) }}">View product details <span aria-hidden="true">↗</span></a>
 </article>

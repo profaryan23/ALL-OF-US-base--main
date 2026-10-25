@@ -2,22 +2,22 @@
 {% block module_title %}Sales{% endblock %}
 {% block module_heading %}Sales management{% endblock %}
 
-{% block module_content %}
+{% block module_content %}<p class="report-note">Completed agent commission: Rs {{ '%.2f'|format(agent_commission) }}</p>
 <!-- Executive KPI Cards: Gross Revenue, Net Revenue, AOV, Total Units Sold, Manufacturing Margin -->
 <section class="metrics-grid sales-metrics executive-kpi-grid">
   <article class="metric metric-dark">
     <span>Gross Revenue</span>
-    <strong>${{ '%.2f'|format(gross_revenue) }}</strong>
+    <strong>Rs {{ '%.2f'|format(gross_revenue) }}</strong>
     <small>Pre-discounts & returns</small>
   </article>
   <article class="metric metric-dark">
     <span>Net Revenue</span>
-    <strong>${{ '%.2f'|format(net_revenue) }}</strong>
+    <strong>Rs {{ '%.2f'|format(net_revenue) }}</strong>
     <small>Post-discounts across {{ order_count }} orders</small>
   </article>
   <article class="metric metric-mid">
     <span>Average Order Value (AOV)</span>
-    <strong>${{ '%.2f'|format(average_order) }}</strong>
+    <strong>Rs {{ '%.2f'|format(average_order) }}</strong>
     <small>Revenue per transaction</small>
   </article>
   <article class="metric metric-light">
@@ -28,7 +28,7 @@
   <article class="metric metric-dark" style="background: #1e252b; border-color: #313c47;">
     <span>Est. Manufacturing Margin</span>
     <strong>{{ '%.1f'|format(gross_margin_pct) }}%</strong>
-    <small>${{ '%.2f'|format(gross_profit) }} gross profit (Vendor COGS)</small>
+    <small>Rs {{ '%.2f'|format(gross_profit) }} gross profit (Vendor COGS)</small>
   </article>
 </section>
 
@@ -36,18 +36,18 @@
 <section class="sales-channel-strip">
   <div class="channel-chip">
     <span class="chip-label">🏪 In-store sales:</span>
-    <strong>${{ '%.2f'|format(store_revenue) }}</strong>
+    <strong>Rs {{ '%.2f'|format(store_revenue) }}</strong>
     <small>({{ store_orders_count }} transactions)</small>
   </div>
   <div class="channel-chip">
     <span class="chip-label">🚚 Online delivery:</span>
-    <strong>${{ '%.2f'|format(online_revenue) }}</strong>
+    <strong>Rs {{ '%.2f'|format(online_revenue) }}</strong>
     <small>({{ online_orders_count }} shipments)</small>
   </div>
   {% if total_discounts > 0 %}
   <div class="channel-chip chip-discount">
     <span class="chip-label">🏷️ Promo deductions:</span>
-    <strong>-${{ '%.2f'|format(total_discounts) }}</strong>
+    <strong>-Rs {{ '%.2f'|format(total_discounts) }}</strong>
     <small>campaign promos</small>
   </div>
   {% endif %}
@@ -63,6 +63,7 @@
     <div class="sales-head-actions">
       <!-- Date Range Filter -->
       <form method="get" action="{{ url_for('admin_sales') }}" class="period-filter">
+        {% include 'agent_filter.html' %}
         <label for="period">Date Range</label>
         <select id="period" name="period" onchange="this.form.submit()">
           <option value="today" {% if period == 'today' %}selected{% endif %}>Today</option>
@@ -74,7 +75,7 @@
       </form>
 
       <!-- Export to CSV / Excel Button -->
-      <a href="{{ url_for('export_sales') }}?period={{ period }}" class="button button-outline export-ledger-btn" title="Download completed transaction ledger CSV for reconciliation">
+      <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;agent_id={{ selected_agent }}" class="button button-outline export-ledger-btn" title="Download completed transaction ledger CSV for reconciliation">
         <span class="download-icon">↓</span> Export to CSV
       </a>
 
@@ -87,7 +88,7 @@
 
   <!-- Collapsible Record Sale Form Panel (Preserved seamlessly) -->
   <div id="record-sale-panel" class="record-sale-container" style="display: none;">
-    <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card">
+    <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card" data-variant-sale>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="product-editor-heading">
         <div>
@@ -123,11 +124,11 @@
       <div class="product-editor-grid" style="margin-top: 16px;">
         <label class="product-editor-wide">
           <span>Select Product *</span>
-          <select name="product_id" id="sale-product-select" required>
+          <select name="product_id" id="sale-product-select" required data-variant-product>
             <option value="" disabled selected>Choose a product from inventory...</option>
             {% for prod in all_products %}
-              <option value="{{ prod.id }}" data-price="{{ '%.2f'|format(prod.price) }}" data-sizes="{{ prod.size_variations }}" data-stock="{{ prod.stock_quantity }}">
-                {{ prod.name }} — ${{ '%.2f'|format(prod.price) }} ({{ prod.stock_quantity }} units in stock)
+              <option value="{{ prod.id }}" data-price="{{ '%.2f'|format(prod.price) }}" data-sizes="{{ prod.size_variations }}" data-colors='{{ product_colors(prod)|tojson }}' data-stock="{{ prod.stock_quantity }}">
+                {{ prod.name }} — Rs {{ '%.2f'|format(prod.price) }} ({{ prod.stock_quantity }} units in stock)
               </option>
             {% endfor %}
           </select>
@@ -137,13 +138,18 @@
           <input type="number" name="quantity" id="sale-quantity-input" min="1" value="1" required>
         </label>
         <label>
-          <span>Unit Price ($) *</span>
+          <span>Unit Price (Rs) *</span>
           <input type="number" name="price" id="sale-price-input" min="0.01" step="0.01" placeholder="0.00" required>
         </label>
         <label>
           <span>Size / Variant</span>
-          <input name="size_variation" id="sale-size-input" maxlength="80" placeholder="e.g. Medium, Size L (optional)">
+          <select name="size_variation" id="sale-size-input" data-variant-size></select>
         </label>
+        <label>Color<select name="color_variation" data-variant-color></select></label>
+        <label>Selling agent<select name="agent_id"><option value="">Direct sale (no agent)</option>{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</select></label>
+        <label>Stock source<select name="allocation_id"><option value="">Warehouse stock (new acquisition)</option>{% for a in allocations %}<option value="{{ a.id }}" data-agent="{{ a.agent_id }}" data-product="{{ a.product_id }}" data-size="{{ a.size_variation }}" data-color="{{ a.color_variation }}" data-discount="{{ a.company_discount_percent }}">#{{ a.id }} {{ a.agent.name }} / {{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }} — {{ a.remaining }} left at Rs {{ a.unit_cost }}</option>{% endfor %}</select></label>
+        <label>Company discount (%)<input name="company_discount_percent" type="number" min="0" max="100" step="0.01" value="10" required><small>Applied to list price for agent acquisition. Issued stock keeps its original cost.</small></label>
+        <label>Agent commission (%)<input name="commission_percent" type="number" min="0" max="100" step="0.01" value="10" required><small>Commission = actual sale amount × this percentage.</small></label>
         <label>
           <span>Order Status</span>
           <select name="status">
@@ -157,7 +163,7 @@
       <!-- Live Calculation Box -->
       <div class="sale-total-box">
         <span>Estimated Sale Total:</span>
-        <strong id="sale-total-display">$0.00</strong>
+        <strong id="sale-total-display">Rs 0.00</strong>
       </div>
 
       <!-- Customer Verification & CRM Section -->
@@ -252,7 +258,7 @@
           <th>Unit Price</th>
           <th>Vendor COGS (Unit)</th>
           <th>Gross Revenue</th>
-          <th>Gross Profit ($)</th>
+          <th>Gross Profit (Rs)</th>
           <th>Gross Margin (%)</th>
         </tr>
       </thead>
@@ -267,10 +273,10 @@
             <span class="variant-tag">{{ v.size }}</span>
           </td>
           <td><strong>{{ v.units }}</strong></td>
-          <td>${{ '%.2f'|format(v.unit_price) }}</td>
-          <td>${{ '%.2f'|format(v.unit_cogs) }}</td>
-          <td>${{ '%.2f'|format(v.gross_revenue) }}</td>
-          <td><strong style="color: #1b5e20;">+${{ '%.2f'|format(v.gross_profit) }}</strong></td>
+          <td>Rs {{ '%.2f'|format(v.unit_price) }}</td>
+          <td>Rs {{ '%.2f'|format(v.unit_cogs) }}</td>
+          <td>Rs {{ '%.2f'|format(v.gross_revenue) }}</td>
+          <td><strong style="color: #1b5e20;">+Rs {{ '%.2f'|format(v.gross_profit) }}</strong></td>
           <td>
             <span class="margin-indicator {% if v.margin_pct >= 60 %}margin-high{% elif v.margin_pct >= 40 %}margin-mid{% else %}margin-low{% endif %}">
               {{ '%.1f'|format(v.margin_pct) }}%
@@ -295,7 +301,7 @@
     <h2>{{ best_seller.name }}</h2>
     <strong>{{ best_seller.units }} units sold</strong>
   </div>
-  <span>${{ '%.2f'|format(best_seller.revenue) }} revenue in this period</span>
+  <span>Rs {{ '%.2f'|format(best_seller.revenue) }} revenue in this period</span>
 </section>
 {% endif %}
 
@@ -310,7 +316,7 @@
   <div class="sales-chart">
     {% for row in daily_sales %}
       <div class="sales-bar">
-        <span>${{ '%.2f'|format(row.amount) }}</span>
+        <span>Rs {{ '%.2f'|format(row.amount) }}</span>
         <i style="height:{{ (row.amount / max_daily * 100)|int if max_daily else 0 }}%"></i>
         <small>{{ row.day }}</small>
       </div>
@@ -329,7 +335,7 @@
       <p class="report-note">Completed transactions, channel logs, customer accounts, and vendor fulfillment status.</p>
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
-      <a href="{{ url_for('export_sales') }}?period={{ period }}" class="button button-outline button-sm">
+      <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;agent_id={{ selected_agent }}" class="button button-outline button-sm">
         ↓ Download CSV
       </a>
       <span class="product-count">{{ orders|length }} transaction{{ 's' if orders|length != 1 else '' }}</span>
@@ -366,10 +372,11 @@
               {{ order.user.first_name }} {{ order.user.last_name }} ↗
             </a>
             <small>{{ order.user.email }}{% if order.user.phone %} · {{ order.user.phone }}{% endif %}</small>
+            <small>Agent: {{ order.agent.name if order.agent else 'Direct sale' }}</small>
           </td>
           <td>
             {% for item in order.items %}
-              <div>{{ item.quantity }}x {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}</div>
+              <div>{{ item.quantity }}x {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}{% if item.color_variation %} / {{ item.color_variation }}{% endif %}</div>
             {% else %}
               <span style="color: #999;">No items</span>
             {% endfor %}
@@ -384,7 +391,7 @@
               <small style="color: #888;">Standard dispatch</small>
             {% endif %}
           </td>
-          <td><strong>${{ '%.2f'|format(order.total_amount) }}</strong></td>
+          <td><strong>Rs {{ '%.2f'|format(order.total_amount) }}</strong></td>
           <td>
             <span class="status-indicator {% if order.status == 'Completed' %}status-live{% elif order.status == 'Processing' %}status-oos{% else %}status-off{% endif %}">
               ● {{ order.status }}
@@ -424,7 +431,7 @@
         <tr>
           <td class="customer-name">{{ item.name }}</td>
           <td>{{ item.units }}</td>
-          <td>${{ '%.2f'|format(item.revenue) }}</td>
+          <td>Rs {{ '%.2f'|format(item.revenue) }}</td>
         </tr>
         {% else %}
         <tr>

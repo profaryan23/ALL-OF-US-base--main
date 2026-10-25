@@ -11,6 +11,7 @@
       <p class="report-note">Click any Order ID (e.g., <code>#0003</code>) to open the deep fulfillment drawer with line-item variants, shipping details, and vendor production tracking.</p>
     </div>
     <form method="get" action="{{ url_for('admin_orders') }}" class="period-filter">
+      {% include 'agent_filter.html' %}
       <label for="status">Status</label>
       <select id="status" name="status" onchange="this.form.submit()">
         <option value="">All statuses</option>
@@ -48,14 +49,15 @@
           <td>
             {{ order.user.first_name }} {{ order.user.last_name }}
             <small>{{ order.user.email }}</small>
+            <small>Agent: {{ order.agent.name if order.agent else 'Direct sale' }}</small>
           </td>
           <td>{{ order.created_at.strftime('%b %d, %Y') }}</td>
           <td>
             {% for item in order.items %}
-              {{ item.quantity }} × {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}{% if not loop.last %}<br>{% endif %}
+              {{ item.quantity }} × {{ item.product.name }}{% if item.size_variation %} ({{ item.size_variation }}){% endif %}{% if item.color_variation %} / {{ item.color_variation }}{% endif %}{% if not loop.last %}<br>{% endif %}
             {% endfor %}
           </td>
-          <td><strong>${{ '%.2f'|format(order.total_amount) }}</strong></td>
+          <td><strong>Rs {{ '%.2f'|format(order.total_amount) }}</strong></td>
           <td><span class="status status-{{ order.status|lower }}">{{ order.status }}</span></td>
           <td>
             <form class="status-form" method="post" action="{{ url_for('update_order', order_id=order.id) }}">
@@ -241,8 +243,8 @@
                   <span class="variant-tag">{{ item.size_variation or 'Standard' }}</span>
                 </td>
                 <td>{{ item.quantity }}</td>
-                <td>${{ '%.2f'|format(item.price_at_purchase) }}</td>
-                <td style="text-align: right;"><strong>${{ '%.2f'|format(item.price_at_purchase * item.quantity) }}</strong></td>
+                <td>Rs {{ '%.2f'|format(item.price_at_purchase) }}</td>
+                <td style="text-align: right;"><strong>Rs {{ '%.2f'|format(item.price_at_purchase * item.quantity) }}</strong></td>
               </tr>
               {% else %}
               <tr>
@@ -268,15 +270,15 @@
           </div>
           <div class="fin-item">
             <span>Discounts Applied</span>
-            <strong>-${{ '%.2f'|format(order.discount_amount or 0.00) }}</strong>
+            <strong>-Rs {{ '%.2f'|format(order.discount_amount or 0.00) }}</strong>
           </div>
           <div class="fin-item">
             <span>Tax Total</span>
-            <strong>${{ '%.2f'|format(order.tax_amount or 0.00) }}</strong>
+            <strong>Rs {{ '%.2f'|format(order.tax_amount or 0.00) }}</strong>
           </div>
           <div class="fin-item fin-total">
             <span>Final Paid Total</span>
-            <strong>${{ '%.2f'|format(order.total_amount) }}</strong>
+            <strong>Rs {{ '%.2f'|format(order.total_amount) }}</strong>
           </div>
         </div>
       </section>

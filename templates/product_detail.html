@@ -5,7 +5,7 @@
 <section class="product-detail-shell">
   <nav class="product-breadcrumb" aria-label="Breadcrumb"><a href="{{ url_for('storefront') }}">Home</a><span>/</span><a href="{{ url_for('shop_page') }}">Shop</a><span>/</span><span>{{ product.name }}</span></nav>
   <div class="product-detail">
-    <div class="product-detail-image product-image-0">
+    <div class="product-detail-image product-image-0" data-color-preview>
       {% if product.photo_path %}<img class="product-photo" src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}">{% else %}<span class="product-object object-0"><i></i></span>{% endif %}
       <span class="product-index">{{ product.category }}</span>
       <span class="image-label">{{ product.shop_category }}</span>
@@ -13,14 +13,21 @@
     <div class="product-detail-copy">
       <p class="eyebrow">{{ product.category }} / {{ product.shop_category }}</p>
       <h1>{{ product.name }}</h1>
-      <p class="product-detail-price">${{ '%.2f'|format(product.price) }}</p>
+      <p class="product-detail-price">Rs {{ '%.2f'|format(product.price) }}</p>
       <div class="product-detail-description">{{ product.description }}</div>
       {% if product.stock_quantity > 0 %}
       <form class="product-detail-form" method="post" action="{{ url_for('add_to_cart', product_id=product.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if product_colors(product) %}
+        <fieldset class="variant-fieldset"><legend>Color</legend><div class="size-buttons">
+        {% for color in product_colors(product) %}
+          <label class="size-choice"><input type="radio" name="color_variation" value="{{ color.name }}" required data-color-photo="{{ url_for('static', filename=color.photo_path or product.photo_path) if color.photo_path or product.photo_path else '' }}"><span>{{ color.name }}</span></label>
+        {% endfor %}
+        </div></fieldset>
+        {% endif %}
         {% set sizes = product.size_variations.split(',')|map('trim')|reject('equalto', '')|list %}
         {% if sizes %}
-        <label class="product-size-select product-detail-size"><span>Size</span><select name="size_variation" required><option value="">Choose a size</option>{% for size in sizes %}<option value="{{ size }}">{{ size }}</option>{% endfor %}</select></label>
+        <fieldset class="variant-fieldset"><legend>Size</legend><div class="size-buttons">{% for size in sizes %}<label class="size-choice"><input type="radio" name="size_variation" value="{{ size }}" required><span>{{ size }}</span></label>{% endfor %}</div></fieldset>
         {% endif %}
         <button class="button button-dark product-detail-submit" type="submit">Add to bag <span aria-hidden="true">+</span></button>
         <small>{{ product.stock_quantity }} available</small>

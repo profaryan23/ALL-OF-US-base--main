@@ -216,7 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const price = parseFloat(salePriceInput?.value || "0") || 0;
     const total = qty * price;
     if (saleTotalDisplay) {
-      saleTotalDisplay.textContent = `$${total.toFixed(2)}`;
+      saleTotalDisplay.textContent = `Rs ${total.toFixed(2)}`;
     }
   }
 
