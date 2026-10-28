@@ -30,12 +30,17 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+if os.environ.get("APP_ENV", "development").lower() != "production":
+    load_dotenv()
 
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
 SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-key-change-me")
-ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "" if IS_PRODUCTION else "admin@allofus.com").strip().lower()
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "" if IS_PRODUCTION else "admin123")
+if IS_PRODUCTION:
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+else:
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@allofus.com").strip().lower()
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 DEFAULT_ADMIN_EMAIL = ADMIN_EMAIL
 DEFAULT_ADMIN_PASSWORD = ADMIN_PASSWORD
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///allofus.db")
@@ -532,21 +537,21 @@ PAGE_DEFAULTS = {
     },
 
     "home": {
-        "hero_eyebrow": "FALL / WINTER 2026 — THE CAMPAIGN",
-        "hero_heading": "Back to Back",
-        "hero_intro": "Two silhouettes, one uniform. Heavyweight cotton, high collars, nothing extra.",
-        "hero_cta_label": "Shop the look",
+        "hero_eyebrow": "MADE FOR EVERYDAY TOGETHER",
+        "hero_heading": "Good things have a way of bringing us in.",
+        "hero_intro": "Thoughtful pieces for the rituals, rooms, and people that make a life feel like yours.",
+        "hero_cta_label": "Find your something",
         "hero_cta_url": "/shop",
         "hero_image_path": "images/campaign-duo.png",
         "site_announcement": "A little more room for the good things in life · Free delivery over $75",
-        "hero_video_caption": "ALL OF US / EDITORIAL 01",
+        "hero_video_caption": "ALL OF US / THE COLLECTION",
         "footer_tagline": "Good things are better together.",
-        "section_eyebrow": "WHO WE ARE",
-        "section_heading": "Nothing\nextra.\nEverything\nhonest.",
-        "body": "All of Us started with two people and a simple idea: heavy cotton, clean lines, and pieces you reach for every single day.",
-        "closing_heading": "A little more room for the good things in life.",
+        "section_eyebrow": "OUR STORY",
+        "section_heading": "Made by friends, for all of us.",
+        "body": "Heavyweight fleece, honest denim and soft ribbed cotton — pieces cut roomy, built to last, and made to be shared.",
+        "closing_heading": "Shop the collection",
         "closing_copy": "All of Us · 2026",
-        "meta_description": "Shop thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.",
+        "meta_description": "Thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.",
         "published": True,
     },
     "about": {
@@ -1017,12 +1022,12 @@ def require_user(user: Annotated[User | None, Depends(get_current_user)]):
 
 def resolve_admin_credentials_from_environment():
     global ADMIN_EMAIL, ADMIN_PASSWORD
-    env_email = os.environ.get("ADMIN_EMAIL")
-    if env_email is not None:
-        ADMIN_EMAIL = env_email.strip().lower()
-    env_password = os.environ.get("ADMIN_PASSWORD")
-    if env_password is not None:
-        ADMIN_PASSWORD = env_password
+    if IS_PRODUCTION:
+        ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+        ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+        return
+    ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@allofus.com").strip().lower()
+    ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 
 def normalize_role(role: str | None) -> str:

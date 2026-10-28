@@ -296,12 +296,11 @@ bringing us in.' }}</textarea><small>For a multi-line headline with italic empha
           
           <label class="content-field-wide"><span>Site announcement banner</span><input name="site_announcement" value="{{ home_item.site_announcement if home_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240"></label>
           
-          <label><span>Featured section eyebrow</span><input name="section_eyebrow" value="{{ home_item.section_eyebrow if home_item else 'The good shelf' }}" maxlength="100"></label>
-          <label><span>Featured section heading</span><input name="section_heading" value="{{ home_item.section_heading if home_item else 'Things to keep close.' }}" maxlength="240"></label>
+          <label><span>Our Story eyebrow</span><input name="section_eyebrow" value="{{ home_item.section_eyebrow if home_item else 'OUR STORY' }}" maxlength="100"></label>
+          <label><span>Our Story heading</span><input name="section_heading" value="{{ home_item.section_heading if home_item else 'Made by friends, for all of us.' }}" maxlength="240"></label>
           
-          <label class="content-field-wide"><span>Closing heading</span><textarea name="closing_heading" rows="2" maxlength="240">{{ home_item.closing_heading if home_item else 'For the everyday
-and the once-in-a-whiles.' }}</textarea></label>
-          <label class="content-field-wide"><span>Closing note</span><textarea name="closing_copy" rows="2" maxlength="2000">{{ home_item.closing_copy if home_item else "Made with the idea that\nthere's room for everyone." }}</textarea></label>
+          <label class="content-field-wide"><span>Our Story description</span><textarea name="body" rows="3" maxlength="2000">{{ home_item.body if home_item else 'Heavyweight fleece, honest denim and soft ribbed cotton — pieces cut roomy, built to last, and made to be shared.' }}</textarea></label>
+          <label class="content-field-wide"><span>Our Story CTA button label</span><input name="closing_heading" value="{{ home_item.closing_heading if home_item else 'Shop the collection' }}" maxlength="100"></label>
           
           <label><span>Footer tagline</span><input name="footer_tagline" value="{{ home_item.footer_tagline if home_item else 'Good things are better together.' }}" maxlength="240"></label>
           <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ home_item.meta_description if home_item else 'Shop thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.' }}</textarea></label>

@@ -25,6 +25,15 @@
 <script id="shopProductsJson" type="application/json">{{ products_data|tojson }}</script>
 
 <div class="shop-page-wrapper">
+  <!-- Top Right Bag Button (Exact Match to Reference Screenshot) -->
+  <div style="max-width: 1040px; margin: 0 auto 10px auto; display: flex; justify-content: flex-end;">
+    <button type="button" id="shopBagHeaderBtn" class="sf-header-bag-btn" aria-label="Open shopping bag">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+      <span>Bag</span>
+      <span class="sf-bag-count" id="headerBagCount">({{ cart_count }})</span>
+    </button>
+  </div>
+
   <!-- Header Section (Managed dynamically from Admin Content Studio) -->
   <header class="shop-header">
     <p class="shop-eyebrow">{{ (shop_page.hero_eyebrow if shop_page and shop_page.hero_eyebrow else 'THE COLLECTION')|upper }}</p>
@@ -449,6 +458,8 @@
     var count = getCartTotalItems();
     var headerBag = document.querySelector(".bag-link span");
     if (headerBag) headerBag.textContent = count;
+    var topShopBag = document.getElementById("headerBagCount");
+    if (topShopBag) topShopBag.textContent = "(" + count + ")";
   }
 
   // Modal Open / Close
@@ -467,6 +478,10 @@
   }
 
   viewBagLink.addEventListener("click", openBagModal);
+  var topShopBagBtn = document.getElementById("shopBagHeaderBtn");
+  if (topShopBagBtn) {
+    topShopBagBtn.addEventListener("click", openBagModal);
+  }
   modalCloseBtn.addEventListener("click", closeBagModal);
   bagModal.addEventListener("click", function(e) {
     if (e.target === bagModal) closeBagModal();

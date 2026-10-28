@@ -639,3 +639,30 @@ main.shop-main-wrapper {
     animation: none !important;
   }
 }
+
+
+/* Top Right Bag Button (Exact match with reference Image 1) */
+.sf-header-bag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--sf-border);
+  color: var(--sf-fg);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease;
+}
+.sf-header-bag-btn:hover {
+  background: #f7f5ef;
+  border-color: #c9c5bd;
+}
+.sf-header-bag-btn svg {
+  width: 15px;
+  height: 15px;
+  stroke: var(--sf-fg);
+}
