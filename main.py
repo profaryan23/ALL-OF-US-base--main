@@ -278,21 +278,30 @@ def migrate_catalog_schema():
         },
     }
     with engine.begin() as connection:
+        inspector = inspect(connection)
         for table_name, columns in migrations.items():
+            if table_name not in inspector.get_table_names():
+                continue
             existing_columns = {
-                column["name"] for column in inspect(connection).get_columns(table_name)
+                column["name"] for column in inspector.get_columns(table_name)
             }
             for column_name, column_type in columns.items():
                 if column_name not in existing_columns:
-                    connection.execute(text(
-                        f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
-                    ))
-        connection.execute(text(
-            "UPDATE products SET category = 'General' WHERE category = ''"
-        ))
-        connection.execute(text(
-            "UPDATE products SET shop_category = 'Everyday' WHERE shop_category = ''"
-        ))
+                    try:
+                        connection.execute(text(
+                            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"
+                        ))
+                    except Exception as exc:
+                        logger.warning(f"Skipping alter table {table_name} add {column_name}: {exc}")
+        try:
+            connection.execute(text(
+                "UPDATE products SET category = 'General' WHERE category = ''"
+            ))
+            connection.execute(text(
+                "UPDATE products SET shop_category = 'Everyday' WHERE shop_category = ''"
+            ))
+        except Exception as exc:
+            logger.warning(f"Skipping category updates: {exc}")
 
 
 class Base(DeclarativeBase):
@@ -684,22 +693,31 @@ def migrate_page_content():
         "site_announcement": "VARCHAR(240) NOT NULL DEFAULT ''",
         "hero_video_caption": "VARCHAR(120) NOT NULL DEFAULT ''",
         "footer_tagline": "VARCHAR(240) NOT NULL DEFAULT ''",
-        "hero_image_path": "VARCHAR(255) NOT NULL DEFAULT 'images/home-hero.png'",
+        "hero_image_path": "VARCHAR(255) NOT NULL DEFAULT 'images/campaign-duo.png'",
     }
-    existing_columns = {column["name"] for column in inspect(engine).get_columns("page_content")}
     with engine.begin() as connection:
+        inspector = inspect(connection)
+        if "page_content" not in inspector.get_table_names():
+            return
+        existing_columns = {column["name"] for column in inspector.get_columns("page_content")}
         for column_name, column_type in columns_to_add.items():
             if column_name not in existing_columns:
-                connection.execute(text(
-                    f"ALTER TABLE page_content ADD COLUMN {column_name} {column_type}"
-                ))
+                try:
+                    connection.execute(text(
+                        f"ALTER TABLE page_content ADD COLUMN {column_name} {column_type}"
+                    ))
+                except Exception as exc:
+                    logger.warning(f"Skipping alter table page_content add {column_name}: {exc}")
 
 
 def migrate_accounting_schema():
+    is_postgres = engine.dialect.name == "postgresql"
+    bool_def = "BOOLEAN NOT NULL DEFAULT TRUE"
+    time_def = "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" if is_postgres else "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
     table_columns = {
         "users": {
             "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
-            "is_active": "BOOLEAN NOT NULL DEFAULT 1",
+            "is_active": bool_def,
         },
         "agents": {
             "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
@@ -709,14 +727,14 @@ def migrate_accounting_schema():
             "name": "VARCHAR(160) NOT NULL DEFAULT ''",
             "type": "VARCHAR(24) NOT NULL DEFAULT 'ASSET'",
             "normal_balance": "VARCHAR(8) NOT NULL DEFAULT 'DEBIT'",
-            "is_active": "BOOLEAN NOT NULL DEFAULT 1",
+            "is_active": bool_def,
         },
         "journal_entries": {
-            "date": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "date": time_def,
             "reference_type": "VARCHAR(30) NOT NULL DEFAULT 'ORDER'",
             "reference_id": "INTEGER",
             "description": "VARCHAR(500) NOT NULL DEFAULT ''",
-            "created_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "created_at": time_def,
         },
         "journal_lines": {
             "journal_entry_id": "INTEGER NOT NULL DEFAULT 0",
@@ -732,7 +750,7 @@ def migrate_accounting_schema():
             "entity_type": "VARCHAR(60) NOT NULL DEFAULT 'record'",
             "entity_id": "INTEGER",
             "details": "TEXT NOT NULL DEFAULT ''",
-            "created_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "created_at": time_def,
         },
     }
     with engine.begin() as connection:
@@ -743,7 +761,10 @@ def migrate_accounting_schema():
             existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
             for column_name, column_type in columns.items():
                 if column_name not in existing_columns:
-                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    try:
+                        connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+                    except Exception as exc:
+                        logger.warning(f"Skipping alter table {table_name} add {column_name}: {exc}")
 
 
 def create_activity_log(db: Session, *, actor: User | None, module: str, action: str, entity_type: str, entity_id: int | None = None, details: str = "") -> ActivityLog | None:
