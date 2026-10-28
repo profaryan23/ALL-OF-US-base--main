@@ -1263,8 +1263,10 @@ async def login_submit(request: Request, db: Annotated[Session, Depends(get_db)]
     email = str(form.get("email", "")).strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
     if user and check_password_hash(user.password_hash, str(form.get("password", ""))):
-        destination = request.query_params.get("next", "/")
-        if not destination.startswith("/") or destination.startswith("//"):
+        destination = request.query_params.get("next", "")
+        if not destination or destination == "/":
+            destination = "/admin" if user.is_admin_like else "/"
+        elif not destination.startswith("/") or destination.startswith("//"):
             destination = "/"
         request.session.clear()
         request.session["user_id"] = user.id
