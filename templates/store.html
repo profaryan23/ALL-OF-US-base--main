@@ -1,29 +1,80 @@
 {% extends "base.html" %}
-{% block title %}{{ home_page.hero_heading.replace('\n', ' ') }}{% endblock %}
-{% block meta_description %}{{ home_page.meta_description }}{% endblock %}
+{% block title %}Home{% endblock %}
+{% block meta_description %}{{ home_page.meta_description if home_page else 'Thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.' }}{% endblock %}
 {% block content %}
-<section class="hero hero-video">
-  <video class="hero-background-video" autoplay muted loop playsinline preload="metadata" aria-label="A short film introducing All of Us">
-    <source src="{{ url_for('static', filename='videos/shop-hero-540p.mp4') }}" type="video/mp4">
-    Your browser does not support embedded video.
-  </video>
-  <div class="hero-video-scrim" aria-hidden="true"></div>
-  <div class="hero-copy hero-glass">
-    <p class="eyebrow">{{ home_page.hero_eyebrow }}</p>
-    {% set headline_lines = home_page.hero_heading.split('\n') %}
-    <h1>{% for line in headline_lines[:-1] %}{{ line }}<br>{% endfor %}<em>{{ headline_lines[-1] }}</em></h1>
-    <p class="hero-intro">{{ home_page.hero_intro }}</p>
-    {% if home_page.hero_cta_label %}<a class="button button-dark" href="{{ home_page.hero_cta_url }}">{{ home_page.hero_cta_label }} <span aria-hidden="true">↘</span></a>{% endif %}
+<div class="home-page-shell">
+<section class="editorial-hero">
+  <div class="editorial-hero-visual">
+    <img src="{{ url_for('static', filename=(home_page.hero_image_path if home_page and home_page.hero_image_path else 'images/campaign-duo.png')) }}" alt="Editorial storefront campaign" loading="eager">
   </div>
-  
-  <span class="hero-video-caption">{{ home_page.hero_video_caption }}</span>
-</section>
-<section class="shop-section home-featured" id="shop">
-  <div class="section-heading">
-    <div><p class="eyebrow">{{ home_page.section_eyebrow }}</p><h2>{{ home_page.section_heading }}</h2></div>
-    <a class="back-link" href="{{ url_for('shop_page') }}">Shop the full collection ↗</a>
+
+  <div class="editorial-hero-copy">
+    <p class="eyebrow">{{ home_page.hero_eyebrow if home_page and home_page.hero_eyebrow else 'FALL / WINTER 2026 — THE CAMPAIGN' }}</p>
+    <h1>{{ (home_page.hero_heading if home_page and home_page.hero_heading else 'Back to Back')|replace('\n', '<br>')|safe }}</h1>
+    <p class="hero-intro">{{ home_page.hero_intro if home_page and home_page.hero_intro else 'Two silhouettes, one uniform. Heavyweight cotton, high collars, nothing extra.' }}</p>
+    {% if home_page and home_page.hero_cta_label %}
+      <a class="button button-outline-light" href="{{ home_page.hero_cta_url or '/shop' }}">{{ home_page.hero_cta_label }} <span aria-hidden="true">→</span></a>
+    {% endif %}
   </div>
-  {% if products %}<div class="product-grid" id="shop-products">{% include "product_grid.html" %}</div>{% else %}<p class="empty-state">The shelves are being restocked. Check back soon.</p>{% endif %}
 </section>
-<section class="closing-band"><span class="closing-mark">&</span><p>{{ home_page.closing_heading }}</p><span class="closing-note">{{ home_page.closing_copy }}</span></section>
+
+<section class="story-section">
+  <div class="story-copy">
+    <p class="eyebrow">{{ home_page.section_eyebrow if home_page and home_page.section_eyebrow else 'WHO WE ARE' }}</p>
+    <h2>{{ (home_page.section_heading if home_page and home_page.section_heading else 'Nothing\nextra.\nEverything\nhonest.')|replace('\n', '<br>')|safe }}</h2>
+    <p>{{ home_page.body if home_page and home_page.body else 'All of Us started with two people and a simple idea: heavy cotton, clean lines, and pieces you reach for every single day.' }}</p>
+    <a class="button button-dark button-full" href="{{ url_for('shop_page') }}">See the gallery</a>
+  </div>
+
+  <div class="story-portrait">
+    <div class="portrait-label"><span>02</span> <span>THE PORTRAIT</span></div>
+    <img src="{{ url_for('static', filename='images/ar.png') }}" alt="Studio portrait">
+  </div>
+</section>
+
+<section class="gallery-section" aria-label="Featured storefront categories">
+  <p class="eyebrow">THE GALLERY</p>
+  <h2>All of us, together</h2>
+
+  <div class="gallery-grid">
+    <article class="gallery-card">
+      <img src="{{ url_for('static', filename='images/r.png') }}" alt="Room edit collection">
+      <div class="gallery-card-overlay">
+        <span>01 — GREY &amp; BLACK</span>
+      </div>
+    </article>
+
+    <article class="gallery-card">
+      <img src="{{ url_for('static', filename='images/campaign-duo.png') }}" alt="Campaign duo collection">
+      <div class="gallery-card-overlay">
+        <span>02 — BACK TO BACK</span>
+      </div>
+    </article>
+
+    <article class="gallery-card">
+      <img src="{{ url_for('static', filename='images/l.png') }}" alt="Studio portrait collection">
+      <div class="gallery-card-overlay">
+        <span>03 — THE PORTRAIT</span>
+      </div>
+    </article>
+
+    <article class="gallery-card">
+      <img src="{{ url_for('static', filename='images/ar.png') }}" alt="Studio detail collection">
+      <div class="gallery-card-overlay">
+        <span>04 — THE STUDIO</span>
+      </div>
+    </article>
+  </div>
+</section>
+
+<section class="home-cta-banner">
+  <h3>{{ home_page.closing_heading if home_page and home_page.closing_heading else 'A little more room for the good things in life.' }}</h3>
+  <a class="button button-outline-light" href="{{ home_page.hero_cta_url or '/shop' }}">{{ home_page.hero_cta_label if home_page and home_page.hero_cta_label else 'Shop essentials' }} <span aria-hidden="true">→</span></a>
+</section>
+
+<section class="bottom-signoff">
+  <p>ALL OF US</p>
+  <small>© 2026 All of Us. A little more room for the good things in life.</small>
+</section>
+</div>
 {% endblock %}

@@ -1,33 +1,212 @@
 {% extends "base.html" %}
 {% block title %}{% block module_title %}Studio{% endblock %} · Studio · All of Us{% endblock %}
 {% block content %}
-<section class="admin-shell">
-  <div class="admin-top"><div><p class="eyebrow">All of Us / Back office</p><h1>{% block module_heading %}Studio{% endblock %}<span class="heading-period">.</span></h1></div><a class="back-link" href="{{ url_for('storefront') }}">View storefront ↗</a></div>
-  <div class="module-nav-container">
-    <nav class="module-nav" aria-label="Management modules">
-      <a href="{{ url_for('admin_dashboard') }}" class="{% if active_module == 'overview' %}active{% endif %}">Overview</a>
-      <a href="{{ url_for('admin_content') }}" class="{% if active_module == 'content' %}active{% endif %}">Content</a>
-      <a href="{{ url_for('admin_crm') }}" class="{% if active_module == 'crm' %}active{% endif %}">CRM</a>
-      <a href="{{ url_for('admin_inventory') }}" class="{% if active_module == 'inventory' %}active{% endif %}">Inventory</a>
-      <a href="{{ url_for('admin_agents') }}" class="{% if active_module == 'agents' %}active{% endif %}">Agents</a>
-      <a href="{{ url_for('admin_sales') }}" class="{% if active_module == 'sales' %}active{% endif %}">Sales</a>
-      <a href="{{ url_for('admin_orders') }}" class="{% if active_module == 'orders' %}active{% endif %}">Orders</a>
-      <a href="{{ url_for('admin_analytics') }}" class="{% if active_module == 'analytics' %}active{% endif %}">Website analytics</a>
-      <a href="{{ url_for('admin_reports') }}" class="{% if active_module == 'reports' %}active{% endif %}">Reports</a>
-    </nav>
-    <div class="module-nav-search-area">
+<section class="admin-shell admin-sidebar-layout">
+  <!-- Left Side: Rectangular Navigation Menu Box Pinned to Left Corner -->
+  <aside class="admin-sidebar" aria-label="Main navigation">
+    <!-- User Profile Header: Circular Avatar, Name, Email (Matching Reference Image) -->
+    <div class="sidebar-profile-card">
+      <div class="sidebar-avatar-wrap">
+        {% if current_user and current_user.profile_image %}
+          <img src="{{ current_user.profile_image }}" alt="{{ current_user.first_name }}" class="sidebar-avatar-img">
+        {% else %}
+          <div class="sidebar-avatar-circle" aria-hidden="true">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-4.43-.82-6.14-2.88C7.55 15.8 9.68 15 12 15s4.45.8 6.14 2.12C16.43 19.18 14.03 20 12 20z"/>
+            </svg>
+          </div>
+        {% endif %}
+      </div>
+      <div class="sidebar-user-meta">
+        <h3 class="sidebar-user-name">{% if current_user %}{{ current_user.first_name }} {{ current_user.last_name }}{% else %}JOHN DON{% endif %}</h3>
+        <p class="sidebar-user-email">{% if current_user %}{{ current_user.email }}{% else %}johndon@company.com{% endif %}</p>
+      </div>
+    </div>
+
+    <!-- Search in Sidebar -->
+    <div class="sidebar-search-area module-nav-search-area">
       <form class="module-nav-search-form" action="{{ url_for('admin_search') }}" method="get" role="search">
         <input type="hidden" name="module" value="{{ active_module or 'overview' }}">
         <div class="search-input-group">
           <input type="search" name="q" placeholder="Search {{ module_label or 'studio' }}..." aria-label="Search {{ module_label or 'studio' }}" value="{{ query or '' }}" class="nav-search-input" autocomplete="off">
-          <button type="submit" class="button button-dark nav-search-button" title="Search {{ module_label or 'module' }}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-1px; margin-right:4px;"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-            <span>Search</span>
+          <button type="submit" class="nav-search-button" title="Search {{ module_label or 'module' }}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
           </button>
         </div>
       </form>
     </div>
+
+    <!-- SECTION: Studio Back-Office Modules -->
+    <div class="sidebar-nav-section">
+      <div class="sidebar-section-heading">Studio Modules</div>
+      <nav class="sidebar-section-nav module-nav" aria-label="Studio Back-Office Modules">
+        <a href="{{ url_for('admin_dashboard') }}" class="nav-item {% if active_module == 'overview' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="nav-text">Overview</span>
+        </a>
+        <a href="{{ url_for('admin_content') }}" class="nav-item {% if active_module == 'content' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+          <span class="nav-text">Content</span>
+        </a>
+        {% if active_module == 'content' %}
+        <div class="sidebar-subnav" style="padding-left: 38px; margin: 3px 0 8px 0; display: flex; flex-direction: column; gap: 4px;">
+          <a href="{{ url_for('admin_content') }}?tab=shop" style="font-size: 11.5px; color: {% if active_tab == 'shop' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• Shop page</a>
+          <a href="{{ url_for('admin_content') }}?tab=about" style="font-size: 11.5px; color: {% if active_tab == 'about' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• About page</a>
+          <a href="{{ url_for('admin_content') }}?tab=contact" style="font-size: 11.5px; color: {% if active_tab == 'contact' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• Contact page</a>
+          <a href="{{ url_for('admin_content') }}?tab=home" style="font-size: 11.5px; color: {% if active_tab == 'home' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• Home page</a>
+          <a href="{{ url_for('admin_content') }}?tab=messages" style="font-size: 11.5px; color: {% if active_tab == 'messages' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• Inbox{% if unread_count and unread_count > 0 %} ({{ unread_count }}){% endif %}</a>
+        </div>
+        {% endif %}
+        <a href="{{ url_for('admin_crm') }}" class="nav-item {% if active_module == 'crm' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="nav-text">CRM</span>
+        </a>
+        <a href="{{ url_for('admin_rbac') }}" class="nav-item {% if active_module == 'rbac' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span class="nav-text">RBAC</span>
+        </a>
+        <a href="{{ url_for('admin_inventory') }}" class="nav-item {% if active_module == 'inventory' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+          <span class="nav-text">Inventory</span>
+        </a>
+        <a href="{{ url_for('admin_agents') }}" class="nav-item {% if active_module == 'agents' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          <span class="nav-text">Agents</span>
+        </a>
+        <a href="{{ url_for('admin_sales') }}" class="nav-item {% if active_module == 'sales' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <span class="nav-text">Sales</span>
+        </a>
+        <a href="{{ url_for('admin_orders') }}" class="nav-item {% if active_module == 'orders' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/></svg>
+          <span class="nav-text">Orders</span>
+          {% if admin_pending_orders_count and admin_pending_orders_count > 0 %}
+            <span class="sidebar-order-badge" title="{{ admin_pending_orders_count }} pending orders">{{ admin_pending_orders_count }}</span>
+          {% endif %}
+        </a>
+        <a href="{{ url_for('admin_accounts') }}" class="nav-item {% if active_module == 'accounts' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+          <span class="nav-text">Accounts</span>
+        </a>
+        <a href="{{ url_for('admin_analytics') }}" class="nav-item {% if active_module == 'analytics' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
+          <span class="nav-text">Website analytics</span>
+        </a>
+        <a href="{{ url_for('admin_activities') }}" class="nav-item {% if active_module == 'activities' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+          <span class="nav-text">Activities</span>
+        </a>
+        <a href="{{ url_for('admin_reports') }}" class="nav-item {% if active_module == 'reports' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span class="nav-text">Reports</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- Sidebar Bottom Actions -->
+    <div class="sidebar-bottom-actions">
+      <a class="sidebar-storefront-btn" href="{{ url_for('storefront') }}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" x2="21" y1="14" y2="3"/></svg>
+        <span>View Storefront</span>
+      </a>
+      {% if current_user %}
+      <form method="post" action="{{ url_for('logout') }}" class="sidebar-signout-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="sidebar-signout-btn" type="submit">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+          <span>Sign Out</span>
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <!-- Right Side: Main Module Content Area (Cleanly to the right without overlapping) -->
+  <div class="admin-main-pane">
+    <div class="admin-top">
+      <div>
+        <p class="eyebrow">All of Us / Back office</p>
+        <h1>{% block module_heading %}Studio{% endblock %}<span class="heading-period">.</span></h1>
+      </div>
+      <div class="admin-top-actions">
+        <!-- Order Placed Notifications Center -->
+        <div class="admin-notif-center" id="adminNotifCenter">
+          <button type="button" class="notif-bell-button" id="notifBellButton" aria-expanded="false" aria-label="Order notifications">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+            <span>Orders</span>
+            {% if admin_pending_orders_count and admin_pending_orders_count > 0 %}
+              <span class="notif-badge-bubble" title="{{ admin_pending_orders_count }} pending orders">{{ admin_pending_orders_count }}</span>
+            {% endif %}
+          </button>
+          <div class="notif-dropdown-panel" id="notifDropdownPanel" hidden>
+            <div class="notif-panel-header">
+              <strong>Order Placed Notifications</strong>
+              {% if admin_pending_orders_count and admin_pending_orders_count > 0 %}
+                <span class="notif-status-pill">{{ admin_pending_orders_count }} pending</span>
+              {% else %}
+                <span class="notif-status-pill pill-muted">All up to date</span>
+              {% endif %}
+            </div>
+            <div class="notif-items-list">
+              {% if admin_order_notifications %}
+                {% for notif in admin_order_notifications %}
+                  <a href="{{ url_for('admin_orders') }}#order-row-{{ notif.id }}" class="notif-item-link {% if notif.status == 'Pending' %}notif-item-pending{% endif %}">
+                    <div class="notif-item-top">
+                      <span class="notif-order-id">{{ notif.order_number }}</span>
+                      <span class="notif-time">{{ notif.created_at.strftime('%b %d, %H:%M') if notif.created_at else '' }}</span>
+                    </div>
+                    <div class="notif-item-body">
+                      <span class="notif-customer">{{ notif.customer_name }}</span> placed an order
+                      <span class="notif-amount">Rs {{ '%.2f'|format(notif.total_amount) }}</span>
+                    </div>
+                    <div class="notif-item-meta">
+                      <span>{{ notif.items_count }} item(s)</span>
+                      <span class="notif-tag notif-tag-{{ notif.status|lower }}">{{ notif.status }}</span>
+                    </div>
+                  </a>
+                {% endfor %}
+              {% else %}
+                <div class="notif-empty">No orders placed yet.</div>
+              {% endif %}
+            </div>
+            <div class="notif-panel-footer">
+              <a href="{{ url_for('admin_orders') }}">Open Order Management System →</a>
+            </div>
+          </div>
+        </div>
+
+        <span class="welcome">Hi, {{ current_user.first_name }}</span>
+        <a class="back-link" href="{{ url_for('storefront') }}">View storefront ↗</a>
+      </div>
+    </div>
+
+    {% block module_content %}{% endblock %}
   </div>
-  {% block module_content %}{% endblock %}
 </section>
+
+<script>
+  (function() {
+    var bell = document.getElementById("notifBellButton");
+    var panel = document.getElementById("notifDropdownPanel");
+    if (bell && panel) {
+      bell.addEventListener("click", function(e) {
+        e.stopPropagation();
+        var isHidden = panel.hasAttribute("hidden");
+        if (isHidden) {
+          panel.removeAttribute("hidden");
+          bell.setAttribute("aria-expanded", "true");
+        } else {
+          panel.setAttribute("hidden", "");
+          bell.setAttribute("aria-expanded", "false");
+        }
+      });
+      document.addEventListener("click", function(e) {
+        if (!panel.contains(e.target) && !bell.contains(e.target)) {
+          panel.setAttribute("hidden", "");
+          bell.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}

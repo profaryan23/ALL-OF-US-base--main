@@ -1,0 +1,69 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Users{% endblock %}{% block module_heading %}User access{% endblock %}
+{% block module_content %}
+<section class="metrics-grid crm-metrics">
+  <article class="metric metric-dark"><span>Total accounts</span><strong>{{ users|length }}</strong><small>Across the platform</small></article>
+  <article class="metric metric-mid"><span>Customers</span><strong>{{ users|selectattr('role', 'equalto', 'customer')|list|length }}</strong><small>Self-serve shoppers</small></article>
+  <article class="metric metric-light"><span>Agents</span><strong>{{ users|selectattr('role', 'equalto', 'agent')|list|length }}</strong><small>Sales partners</small></article>
+  <article class="metric metric-mid"><span>Admins</span><strong>{{ users|selectattr('role', 'equalto', 'admin')|list|length }}</strong><small>Studio access</small></article>
+</section>
+
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">RBAC access</p>
+      <h2>Add user account</h2>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('create_user_account') }}" class="product-editor-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>First name<input name="first_name" maxlength="80" required></label>
+    <label>Last name<input name="last_name" maxlength="80" required></label>
+    <label>Email<input name="email" type="email" maxlength="255" required></label>
+    <label>Phone<input name="phone" maxlength="40"></label>
+    <label>Password<input name="password" type="password" minlength="8" required></label>
+    <label>Role<select name="role">
+      <option value="customer">Customer</option>
+      <option value="agent">Agent</option>
+      <option value="admin">Admin</option>
+    </select></label>
+    <label class="checkbox-toggle"><input type="checkbox" name="marketing_opt_in"> Marketing opt-in</label>
+    <button class="button button-dark" type="submit">Create account</button>
+  </form>
+</section>
+
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Access control</p>
+      <h2>All accounts</h2>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Role</th>
+          <th>Created</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+        <tr>
+          <td>{{ user.first_name }} {{ user.last_name }}</td>
+          <td>{{ user.email }}</td>
+          <td>{{ user.phone or 'No phone' }}</td>
+          <td>{{ role_labels.get(user.role, user.role) }}</td>
+          <td>{{ user.created_at.strftime('%b %d, %Y') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="table-empty">No user accounts have been created yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

@@ -1,6 +1,33 @@
 {% extends "admin_base.html" %}
 {% block module_title %}Overview{% endblock %}{% block module_heading %}The studio{% endblock %}
 {% block module_content %}
+{% if admin_order_notifications %}
+<div class="admin-notif-banner">
+  <div class="notif-banner-head">
+    <div class="notif-banner-title">
+      <span class="notif-pulse-dot"></span>
+      <strong>Order Placed Notifications</strong>
+      <span>Recent orders placed by store visitors</span>
+    </div>
+    <a href="{{ url_for('admin_orders') }}" class="notif-banner-link">Order Management System →</a>
+  </div>
+  <div class="notif-banner-cards">
+    {% for notif in admin_order_notifications[:4] %}
+    <a href="{{ url_for('admin_orders') }}#order-row-{{ notif.id }}" class="notif-card-mini">
+      <div class="notif-card-top">
+        <strong>{{ notif.order_number }}</strong>
+        <span class="status status-{{ notif.status|lower }}">{{ notif.status }}</span>
+      </div>
+      <p class="notif-card-user">{{ notif.customer_name }}</p>
+      <div class="notif-card-bottom">
+        <span>Rs {{ '%.2f'|format(notif.total_amount) }}</span>
+        <small>{{ notif.created_at.strftime('%b %d, %H:%M') if notif.created_at else '' }}</small>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
 <section class="metrics-grid overview-metrics"><article class="metric metric-dark"><span>Customers</span><strong>{{ customer_count }}</strong><small>Registered accounts</small></article><article class="metric metric-mid"><span>Products</span><strong>{{ product_count }}</strong><small>{{ low_stock_count }} at or below 5 units</small></article><article class="metric metric-light"><span>Orders</span><strong>{{ order_count }}</strong><small>{{ order_status_counts['Pending'] }} pending · {{ order_status_counts['Processing'] }} processing</small></article><article class="metric metric-dark"><span>Net sales</span><strong>Rs {{ '%.2f'|format(revenue) }}</strong><small>Cancelled orders excluded</small></article></section>
 <div class="module-grid">
   <a class="module-card" href="{{ url_for('admin_content') }}"><span class="module-number">01</span><div><h2>Content management</h2><p>Edit home, About, and Contact page content, page descriptions, publishing status, and visitor messages.</p></div><span class="module-arrow">↗</span></a>

@@ -5,6 +5,7 @@
 <section class="admin-section module-section">
   <div class="admin-section-head"><div><p class="eyebrow">Page editor</p><h2>{{ content.page_key.title() }} content.</h2></div>
     {% if content.page_key == 'home' %}<a class="back-link" href="{{ url_for('storefront') }}">Preview ↗</a>
+    {% elif content.page_key == 'shop' %}<a class="back-link" href="{{ url_for('shop_page') }}">Preview ↗</a>
     {% elif content.published and content.page_key == 'about' %}<a class="back-link" href="{{ url_for('about_page') }}">Preview ↗</a>
     {% elif content.published %}<a class="back-link" href="{{ url_for('contact_page') }}">Preview ↗</a>
     {% else %}<span class="content-status">Not public</span>{% endif %}

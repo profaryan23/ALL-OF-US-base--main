@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Profile · All of Us{% endblock %}
+{% block content %}
+<section class="auth-shell narrow-shell">
+  <div class="auth-card">
+    <div class="auth-header">
+      <p class="eyebrow">Your profile</p>
+      <h1>Manage your account</h1>
+    </div>
+
+    <form method="post" action="{{ url_for('account_profile_update') }}" enctype="multipart/form-data" class="stack-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>First name<input name="first_name" value="{{ user.first_name }}" required></label>
+      <label>Last name<input name="last_name" value="{{ user.last_name }}" required></label>
+      <label>Email<input name="email" value="{{ user.email }}" readonly aria-readonly="true"></label>
+      <label>Phone<input name="phone" value="{{ user.phone }}" placeholder="Optional phone number"></label>
+      <label>Profile image<input type="file" name="profile_image" accept="image/jpeg,image/png,image/webp"></label>
+      {% if user.profile_image %}
+      <img src="{{ '/' + user.profile_image if user.profile_image.startswith('product-images') else '/' + user.profile_image }}" alt="Current profile" style="max-height: 180px; width: auto; border-radius: 12px; object-fit: cover;">
+      {% endif %}
+      <button class="button button-dark" type="submit">Save profile</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

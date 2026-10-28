@@ -1,0 +1,114 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Accounts{% endblock %}
+{% block module_heading %}Accounting{% endblock %}
+{% block module_content %}
+<section class="metrics-grid report-metrics">
+  <article class="metric metric-dark"><span>Assets</span><strong>Rs {{ '%.2f'|format(total_assets) }}</strong><small>Cash, clearing, inventory</small></article>
+  <article class="metric metric-mid"><span>Liabilities</span><strong>Rs {{ '%.2f'|format(total_liabilities) }}</strong><small>Payables and obligations</small></article>
+  <article class="metric metric-light"><span>Equity</span><strong>Rs {{ '%.2f'|format(total_equity) }}</strong><small>Net owners' equity</small></article>
+  <article class="metric metric-dark"><span>Entries</span><strong>{{ entries|length }}</strong><small>Recent journal activity</small></article>
+</section>
+
+<section class="admin-section report-panel">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">General ledger</p>
+      <h2>Chart of accounts</h2>
+    </div>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Normal</th>
+          <th>Balance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for account in accounts %}
+        <tr>
+          <td>{{ account.code }}</td>
+          <td>{{ account.name }}</td>
+          <td>{{ account.type }}</td>
+          <td>{{ account.normal_balance }}</td>
+          <td>Rs {{ '%.2f'|format(balances.get(account.id, 0)) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="table-empty">No account records yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="admin-section report-columns">
+  <article class="report-panel">
+    <div class="admin-section-head">
+      <div><p class="eyebrow">Journal entry</p><h2>Post a transaction</h2></div>
+    </div>
+    <form method="post" action="{{ url_for('create_journal_entry') }}" class="account-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="form-grid compact-grid">
+        <label>
+          Date
+          <input type="date" name="date" value="{{ today or '' }}">
+        </label>
+        <label>
+          Reference type
+          <select name="reference_type">
+            <option value="ORDER">ORDER</option>
+            <option value="EXPENSE">EXPENSE</option>
+            <option value="REFUND">REFUND</option>
+            <option value="PAYOUT">PAYOUT</option>
+          </select>
+        </label>
+        <label>
+          Reference ID
+          <input type="number" name="reference_id" min="1" value="1">
+        </label>
+      </div>
+      <label>
+        Description
+        <textarea name="description" rows="2" placeholder="Describe the transaction"></textarea>
+      </label>
+
+      <div class="journal-lines">
+        <div class="journal-line">
+          <select name="account_id_1">
+            {% for account in accounts %}<option value="{{ account.id }}">{{ account.code }} – {{ account.name }}</option>{% endfor %}
+          </select>
+          <input type="number" step="0.01" name="debit_1" placeholder="Debit" value="0.00">
+          <input type="number" step="0.01" name="credit_1" placeholder="Credit" value="0.00">
+        </div>
+        <div class="journal-line">
+          <select name="account_id_2">
+            {% for account in accounts %}<option value="{{ account.id }}">{{ account.code }} – {{ account.name }}</option>{% endfor %}
+          </select>
+          <input type="number" step="0.01" name="debit_2" placeholder="Debit" value="0.00">
+          <input type="number" step="0.01" name="credit_2" placeholder="Credit" value="0.00">
+        </div>
+      </div>
+      <button type="submit" class="button button-dark">Post journal entry</button>
+    </form>
+  </article>
+
+  <article class="report-panel">
+    <div class="admin-section-head">
+      <div><p class="eyebrow">Ledger activity</p><h2>Recent entries</h2></div>
+    </div>
+    <div class="report-status-list">
+      {% for entry in entries %}
+      <div>
+        <span>{{ entry.reference_type }} #{{ entry.reference_id or 'N/A' }} · {{ entry.date.strftime('%Y-%m-%d') }}</span>
+        <strong>{{ entry.description or 'General ledger entry' }}</strong>
+      </div>
+      {% else %}
+      <p class="table-empty">No journal entries available yet.</p>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+{% endblock %}

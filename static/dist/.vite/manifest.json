@@ -1,0 +1,48 @@
+{
+  "src/assets/fullsleeve-white.png": {
+    "file": "fullsleeve-white.png",
+    "src": "src/assets/fullsleeve-white.png"
+  },
+  "src/assets/henley-grey.png": {
+    "file": "henley-grey.png",
+    "src": "src/assets/henley-grey.png"
+  },
+  "src/assets/hoodie-red.png": {
+    "file": "hoodie-red.png",
+    "src": "src/assets/hoodie-red.png"
+  },
+  "src/assets/jeans-blue.png": {
+    "file": "jeans-blue.png",
+    "src": "src/assets/jeans-blue.png"
+  },
+  "src/assets/tank-black.png": {
+    "file": "tank-black.png",
+    "src": "src/assets/tank-black.png"
+  },
+  "src/assets/twill-jacket-green.png": {
+    "file": "twill-jacket-green.png",
+    "src": "src/assets/twill-jacket-green.png"
+  },
+  "src/assets/twill-pant-green.png": {
+    "file": "twill-pant-green.png",
+    "src": "src/assets/twill-pant-green.png"
+  },
+  "src/main.tsx": {
+    "file": "storefront.bundle.js",
+    "name": "main",
+    "src": "src/main.tsx",
+    "isEntry": true,
+    "css": [
+      "main.css"
+    ],
+    "assets": [
+      "henley-grey.png",
+      "hoodie-red.png",
+      "jeans-blue.png",
+      "twill-pant-green.png",
+      "twill-jacket-green.png",
+      "tank-black.png",
+      "fullsleeve-white.png"
+    ]
+  }
+}

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote, unquote, urlencode
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -29,10 +30,14 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger(__name__)
 
+load_dotenv()
+
 IS_PRODUCTION = os.environ.get("APP_ENV", "development").lower() == "production"
 SECRET_KEY = os.environ.get("SECRET_KEY", "local-development-key-change-me")
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "" if IS_PRODUCTION else "admin@allofus.com").strip().lower()
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "" if IS_PRODUCTION else "admin123")
+DEFAULT_ADMIN_EMAIL = ADMIN_EMAIL
+DEFAULT_ADMIN_PASSWORD = ADMIN_PASSWORD
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///allofus.db")
 if IS_PRODUCTION:
     if not DATABASE_URL.startswith(("postgres://", "postgresql://", "postgresql+psycopg2://")):
@@ -243,6 +248,7 @@ def migrate_catalog_schema():
             "photo_path": "VARCHAR(255) NOT NULL DEFAULT ''",
             "size_variations": "TEXT NOT NULL DEFAULT ''",
             "cogs": "NUMERIC(10, 2) NOT NULL DEFAULT 0.00",
+            "display_order": "INTEGER NOT NULL DEFAULT 0",
         },
         "order_items": {
             "color_variation": "VARCHAR(60) NOT NULL DEFAULT ''",
@@ -297,9 +303,56 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     phone: Mapped[str] = mapped_column(String(40), default="")
     marketing_opt_in: Mapped[bool] = mapped_column(Boolean, default=False)
-    role: Mapped[str] = mapped_column(String(20), default="customer")
+    role: Mapped[str] = mapped_column(String(30), default="customer")
+    profile_image: Mapped[str] = mapped_column(String(255), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     orders: Mapped[list["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def is_admin_like(self) -> bool:
+        return self.role in {"admin", "super_admin", "developer"}
+
+
+class Account(Base):
+    __tablename__ = "accounts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    type: Mapped[str] = mapped_column(String(24), default="ASSET")
+    normal_balance: Mapped[str] = mapped_column(String(8), default="DEBIT")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    journal_lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reference_type: Mapped[str] = mapped_column(String(30), default="ORDER")
+    reference_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    description: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    lines: Mapped[list["JournalLine"]] = relationship(back_populates="journal_entry", cascade="all, delete-orphan")
+
+    @property
+    def total_debit(self) -> Decimal:
+        return sum((line.debit for line in self.lines), Decimal("0.00"))
+
+    @property
+    def total_credit(self) -> Decimal:
+        return sum((line.credit for line in self.lines), Decimal("0.00"))
+
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    journal_entry_id: Mapped[int] = mapped_column(ForeignKey("journal_entries.id"), index=True)
+    account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
+    debit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    credit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    journal_entry: Mapped[JournalEntry] = relationship(back_populates="lines")
+    account: Mapped[Account] = relationship(back_populates="journal_lines")
 
 
 class Product(Base):
@@ -316,6 +369,7 @@ class Product(Base):
     cogs: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
     stock_quantity: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
@@ -325,6 +379,7 @@ class Agent(Base):
     name: Mapped[str] = mapped_column(String(140))
     phone: Mapped[str] = mapped_column(String(40), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
+    profile_image: Mapped[str] = mapped_column(String(255), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -428,6 +483,7 @@ class PageContent(Base):
     closing_copy: Mapped[str] = mapped_column(Text, default="")
     meta_description: Mapped[str] = mapped_column(String(320), default="")
     published: Mapped[bool] = mapped_column(Boolean, default=True)
+    hero_image_path: Mapped[str] = mapped_column(String(255), default="images/home-hero.png")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -442,21 +498,54 @@ class ContactMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    actor_name: Mapped[str] = mapped_column(String(160), default="")
+    module: Mapped[str] = mapped_column(String(60), default="system")
+    action: Mapped[str] = mapped_column(String(120), default="updated")
+    entity_type: Mapped[str] = mapped_column(String(60), default="record")
+    entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    details: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 PAGE_DEFAULTS = {
-    "home": {
-        "hero_eyebrow": "Made for everyday together",
-        "hero_heading": "Good things\nhave a way of\nbringing us in.",
-        "hero_intro": "Thoughtful pieces for the rituals, rooms, and people that make a life feel like yours.",
-        "hero_cta_label": "Find your something",
+    "shop": {
+        "hero_eyebrow": "THE COLLECTION",
+        "hero_heading": "Shop Essentials",
+        "hero_intro": "Thoughtful, relaxed-fit pieces for your everyday wardrobe, slow mornings, and timeless styling.",
+        "hero_cta_label": "Explore collection",
         "hero_cta_url": "/shop",
+        "hero_image_path": "images/home-hero.png",
         "site_announcement": "A little more room for the good things in life · Free delivery over $75",
-        "hero_video_caption": "ALL OF US / A SHORT FILM",
+        "hero_video_caption": "ALL OF US / THE COLLECTION",
         "footer_tagline": "Good things are better together.",
-        "section_eyebrow": "The good shelf",
-        "section_heading": "Things to keep close.",
-        "body": "",
-        "closing_heading": "For the everyday\nand the once-in-a-whiles.",
-        "closing_copy": "Made with the idea that\nthere's room for everyone.",
+        "section_eyebrow": "All essentials",
+        "section_heading": "Designed for everyday life.",
+        "body": "Explore our circular essentials orbit: wide-leg denims, twill sets, henley tops, and hoodies.",
+        "closing_heading": "Made for being together.",
+        "closing_copy": "Thoughtful pieces for slow mornings, relaxed days, and every moment between.",
+        "meta_description": "Shop the All of Us collection — animated stitched-circle apparel selector with product details, size/color/quantity selection, and a multi-item demo shopping bag.",
+        "published": True,
+    },
+
+    "home": {
+        "hero_eyebrow": "FALL / WINTER 2026 — THE CAMPAIGN",
+        "hero_heading": "Back to Back",
+        "hero_intro": "Two silhouettes, one uniform. Heavyweight cotton, high collars, nothing extra.",
+        "hero_cta_label": "Shop the look",
+        "hero_cta_url": "/shop",
+        "hero_image_path": "images/campaign-duo.png",
+        "site_announcement": "A little more room for the good things in life · Free delivery over $75",
+        "hero_video_caption": "ALL OF US / EDITORIAL 01",
+        "footer_tagline": "Good things are better together.",
+        "section_eyebrow": "WHO WE ARE",
+        "section_heading": "Nothing\nextra.\nEverything\nhonest.",
+        "body": "All of Us started with two people and a simple idea: heavy cotton, clean lines, and pieces you reach for every single day.",
+        "closing_heading": "A little more room for the good things in life.",
+        "closing_copy": "All of Us · 2026",
         "meta_description": "Shop thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.",
         "published": True,
     },
@@ -513,6 +602,7 @@ def track_event(db: Session, request: Request, event_type: str, product_id: int 
 
 
 def seed_database():
+    resolve_admin_credentials_from_environment()
     admin_credentials_valid = bool(ADMIN_EMAIL and ADMIN_PASSWORD)
     if IS_PRODUCTION:
         admin_credentials_valid = admin_credentials_valid and ADMIN_PASSWORD != "admin123" and len(ADMIN_PASSWORD) >= 16
@@ -522,11 +612,45 @@ def seed_database():
             "of at least 16 characters in production. Existing accounts are unchanged."
         )
     with SessionLocal.begin() as db:
-        if admin_credentials_valid and not db.query(User).filter_by(email=ADMIN_EMAIL).first():
-            db.add(User(
-                first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
-                password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
-            ))
+        if admin_credentials_valid:
+            configured_admin = db.query(User).filter_by(email=ADMIN_EMAIL).first()
+            existing_admins = db.query(User).filter_by(role="admin").all()
+            if configured_admin is None:
+                if existing_admins:
+                    primary_admin = existing_admins[0]
+                    primary_admin.first_name = "All of Us"
+                    primary_admin.last_name = "Admin"
+                    primary_admin.email = ADMIN_EMAIL
+                    primary_admin.password_hash = generate_password_hash(ADMIN_PASSWORD)
+                    primary_admin.role = "admin"
+                    for duplicate in existing_admins[1:]:
+                        db.delete(duplicate)
+                else:
+                    db.add(User(
+                        first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
+                        password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
+                    ))
+            else:
+                configured_admin.first_name = "All of Us"
+                configured_admin.last_name = "Admin"
+                configured_admin.password_hash = generate_password_hash(ADMIN_PASSWORD)
+                configured_admin.role = "admin"
+                for duplicate in [admin for admin in existing_admins if admin.id != configured_admin.id]:
+                    db.delete(duplicate)
+        existing_account_codes = {row[0] for row in db.query(Account.code).all()}
+        for account in [
+            Account(code="1000", name="Cash and Cash Equivalents", type="ASSET", normal_balance="DEBIT"),
+            Account(code="1100", name="Inventory", type="ASSET", normal_balance="DEBIT"),
+            Account(code="2000", name="Accounts Payable", type="LIABILITY", normal_balance="CREDIT"),
+            Account(code="3000", name="Owner Equity", type="EQUITY", normal_balance="CREDIT"),
+            Account(code="4000", name="Sales Revenue", type="REVENUE", normal_balance="CREDIT"),
+            Account(code="5000", name="Cost of Goods Sold", type="EXPENSE", normal_balance="DEBIT"),
+            Account(code="5100", name="Merchant Fees and Bank Charges", type="EXPENSE", normal_balance="DEBIT"),
+            Account(code="5200", name="Operating Expense", type="EXPENSE", normal_balance="DEBIT"),
+        ]:
+            if account.code not in existing_account_codes:
+                db.add(account)
+                existing_account_codes.add(account.code)
         if db.query(Product).count() == 0:
             db.add_all([
                 Product(name="Everyday Tote", description="A sturdy carryall made for everyday errands.", price=Decimal("28.00"), stock_quantity=18),
@@ -544,6 +668,10 @@ def seed_database():
                         setattr(existing_page, field, content[field])
                 if page_key == "home" and existing_page.hero_cta_url in {"#shop", "/#shop"}:
                     existing_page.hero_cta_url = "/shop"
+        for idx, prod in enumerate(db.query(Product).order_by(Product.id).all(), start=1):
+            if prod.display_order == 0 or prod.display_order is None:
+                prod.display_order = idx
+        db.commit()
 
 
 def migrate_page_content():
@@ -551,6 +679,7 @@ def migrate_page_content():
         "site_announcement": "VARCHAR(240) NOT NULL DEFAULT ''",
         "hero_video_caption": "VARCHAR(120) NOT NULL DEFAULT ''",
         "footer_tagline": "VARCHAR(240) NOT NULL DEFAULT ''",
+        "hero_image_path": "VARCHAR(255) NOT NULL DEFAULT 'images/home-hero.png'",
     }
     existing_columns = {column["name"] for column in inspect(engine).get_columns("page_content")}
     with engine.begin() as connection:
@@ -559,6 +688,140 @@ def migrate_page_content():
                 connection.execute(text(
                     f"ALTER TABLE page_content ADD COLUMN {column_name} {column_type}"
                 ))
+
+
+def migrate_accounting_schema():
+    table_columns = {
+        "users": {
+            "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "is_active": "BOOLEAN NOT NULL DEFAULT 1",
+        },
+        "agents": {
+            "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
+        },
+        "accounts": {
+            "code": "VARCHAR(32) NOT NULL DEFAULT ''",
+            "name": "VARCHAR(160) NOT NULL DEFAULT ''",
+            "type": "VARCHAR(24) NOT NULL DEFAULT 'ASSET'",
+            "normal_balance": "VARCHAR(8) NOT NULL DEFAULT 'DEBIT'",
+            "is_active": "BOOLEAN NOT NULL DEFAULT 1",
+        },
+        "journal_entries": {
+            "date": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            "reference_type": "VARCHAR(30) NOT NULL DEFAULT 'ORDER'",
+            "reference_id": "INTEGER",
+            "description": "VARCHAR(500) NOT NULL DEFAULT ''",
+            "created_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        },
+        "journal_lines": {
+            "journal_entry_id": "INTEGER NOT NULL DEFAULT 0",
+            "account_id": "INTEGER NOT NULL DEFAULT 0",
+            "debit": "NUMERIC(14, 2) NOT NULL DEFAULT 0.00",
+            "credit": "NUMERIC(14, 2) NOT NULL DEFAULT 0.00",
+        },
+        "activity_logs": {
+            "actor_id": "INTEGER",
+            "actor_name": "VARCHAR(160) NOT NULL DEFAULT ''",
+            "module": "VARCHAR(60) NOT NULL DEFAULT 'system'",
+            "action": "VARCHAR(120) NOT NULL DEFAULT 'updated'",
+            "entity_type": "VARCHAR(60) NOT NULL DEFAULT 'record'",
+            "entity_id": "INTEGER",
+            "details": "TEXT NOT NULL DEFAULT ''",
+            "created_at": "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+        },
+    }
+    with engine.begin() as connection:
+        inspector = inspect(connection)
+        for table_name, columns in table_columns.items():
+            if table_name not in inspector.get_table_names():
+                continue
+            existing_columns = {column["name"] for column in inspector.get_columns(table_name)}
+            for column_name, column_type in columns.items():
+                if column_name not in existing_columns:
+                    connection.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}"))
+
+
+def create_activity_log(db: Session, *, actor: User | None, module: str, action: str, entity_type: str, entity_id: int | None = None, details: str = "") -> ActivityLog | None:
+    if actor is None:
+        return None
+    log = ActivityLog(
+        actor_id=actor.id,
+        actor_name=f"{actor.first_name} {actor.last_name}".strip() or actor.email,
+        module=module,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        details=details,
+    )
+    db.add(log)
+    return log
+
+
+def get_account_balance(db: Session, account_id: int, as_of: datetime | None = None) -> Decimal:
+    statement = (
+        db.query(
+            func.coalesce(func.sum(JournalLine.debit), Decimal("0.00")) -
+            func.coalesce(func.sum(JournalLine.credit), Decimal("0.00"))
+        )
+        .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
+        .filter(JournalLine.account_id == account_id)
+    )
+    if as_of is not None:
+        statement = statement.filter(JournalEntry.date <= as_of)
+    total = statement.scalar() or Decimal("0.00")
+    return Decimal(str(total))
+
+
+def post_journal_entry(db: Session, *, date: datetime, reference_type: str, reference_id: int | None, description: str, lines: list[dict]) -> JournalEntry:
+    if not lines:
+        raise ValueError("A journal entry requires at least one line item.")
+
+    normalized_lines = []
+    total_debit = Decimal("0.00")
+    total_credit = Decimal("0.00")
+    for line in lines:
+        account = db.get(Account, int(line["account_id"]))
+        if account is None or not account.is_active:
+            raise ValueError("Every journal line must reference an active account.")
+        debit = money(line.get("debit", 0) or Decimal("0.00"))
+        credit = money(line.get("credit", 0) or Decimal("0.00"))
+        if debit < 0 or credit < 0:
+            raise ValueError("Journal line amounts cannot be negative.")
+        if debit and credit:
+            raise ValueError("Journal lines must be either debit or credit, not both.")
+        total_debit += debit
+        total_credit += credit
+        normalized_lines.append({
+            "account_id": account.id,
+            "debit": debit,
+            "credit": credit,
+        })
+
+    if total_debit == Decimal("0.00") and total_credit == Decimal("0.00"):
+        raise ValueError("Journal entry totals cannot be zero.")
+    if total_debit != total_credit:
+        raise ValueError("Journal entry failed validation: debits must equal credits.")
+
+    entry = JournalEntry(
+        date=date,
+        reference_type=str(reference_type or "ORDER").upper(),
+        reference_id=reference_id,
+        description=str(description or "")[:500],
+    )
+    with db.begin():
+        db.add(entry)
+        db.flush()
+        db.add_all([
+            JournalLine(
+                journal_entry_id=entry.id,
+                account_id=item["account_id"],
+                debit=item["debit"],
+                credit=item["credit"],
+            )
+            for item in normalized_lines
+        ])
+        db.flush()
+    return entry
 
 
 @asynccontextmanager
@@ -573,6 +836,7 @@ async def lifespan(_app: FastAPI):
     Base.metadata.create_all(engine)
     migrate_catalog_schema()
     migrate_page_content()
+    migrate_accounting_schema()
     seed_database()
     yield
 
@@ -591,14 +855,37 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def template_context(request: Request):
     user_id = request.session.get("user_id")
+    admin_pending_orders_count = 0
+    admin_order_notifications = []
     with SessionLocal() as db:
         user = db.get(User, user_id) if user_id else None
         page_contents = {
             item.page_key: item
             for item in db.query(PageContent).filter(
-                PageContent.page_key.in_(("home", "about", "contact"))
+                PageContent.page_key.in_(("home", "about", "contact", "shop"))
             ).all()
         }
+        if user and user.is_admin_like:
+            admin_pending_orders_count = db.query(Order).filter(Order.status == "Pending").count()
+            recent_orders = (
+                db.query(Order)
+                .order_by(Order.created_at.desc())
+                .limit(8)
+                .all()
+            )
+            for o in recent_orders:
+                cust_name = f"{o.user.first_name} {o.user.last_name}" if o.user else "Customer"
+                admin_order_notifications.append({
+                    "id": o.id,
+                    "order_number": f"#{o.id:04d}",
+                    "customer_name": cust_name,
+                    "customer_email": o.user.email if o.user else "",
+                    "total_amount": float(o.total_amount),
+                    "status": o.status,
+                    "created_at": o.created_at,
+                    "items_count": sum(it.quantity for it in o.items),
+                })
+        agents_list = db.query(Agent).order_by(Agent.name).all()
     cart = request.session.get("cart", {})
     message = request.session.pop("flash", None)
 
@@ -628,14 +915,17 @@ def template_context(request: Request):
         "site_content": page_contents.get("home"),
         "about_content": page_contents.get("about"),
         "contact_content": page_contents.get("contact"),
+        "shop_content": page_contents.get("shop"),
         "cart_count": sum(int(quantity) for quantity in cart.values()),
         "csrf_token": csrf_token,
         "get_flashed_messages": get_flashed_messages,
         "url_for": template_url_for,
         "size_choices": SIZE_CHOICES,
         "product_colors": product_colors,
-        "agents": db.query(Agent).order_by(Agent.name).all(),
+        "agents": agents_list,
         "selected_agent": request.query_params.get("agent_id", ""),
+        "admin_pending_orders_count": admin_pending_orders_count,
+        "admin_order_notifications": admin_order_notifications,
     }
 
 
@@ -645,12 +935,55 @@ ADMIN_MODULES = {
     "overview": ("Overview", "admin_dashboard"),
     "content": ("Content", "admin_content"),
     "crm": ("CRM", "admin_crm"),
+    "rbac": ("RBAC", "admin_rbac"),
+    "users": ("Users", "admin_users"),
     "inventory": ("Inventory", "admin_inventory"),
     "agents": ("Agents", "admin_agents"),
     "sales": ("Sales", "admin_sales"),
     "orders": ("Orders", "admin_orders"),
+    "accounts": ("Accounts", "admin_accounts"),
     "analytics": ("Website analytics", "admin_analytics"),
+    "activities": ("Activities", "admin_activities"),
     "reports": ("Reports", "admin_reports"),
+}
+
+ROLE_LABELS = {
+    "customer": "Customer",
+    "agent": "Agent",
+    "admin": "Admin",
+    "super_admin": "Super admin",
+    "developer": "Developer",
+}
+
+RBAC_ROLE_PERMISSIONS = {
+    "admin": [
+        "Create and manage user accounts for agents and customers",
+        "Approve and monitor CRM records",
+        "Edit products, inventory, content, and orders",
+        "Review financial accounts and activity logs",
+    ],
+    "agent": [
+        "View assigned product allocations and sales records",
+        "Track commissions and agent-specific performance",
+        "Submit sales updates tied to customer orders",
+        "Access only their operational data",
+    ],
+    "customer": [
+        "View own profile and purchase history",
+        "Manage orders and shipping/exchange requests",
+        "Self-service account maintenance",
+        "Customer actions are logged into CRM and Activities",
+    ],
+    "super_admin": [
+        "Full platform access and role overrides",
+        "Manage all admin, agent, and customer accounts",
+        "Review activities and audit trail across CRM",
+    ],
+    "developer": [
+        "Technical system access and schema changes",
+        "Monitor platform operations and diagnostics",
+        "Extended permissions with full operational review",
+    ],
 }
 
 
@@ -671,6 +1004,8 @@ def health_check():
 
 def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]):
     user_id = request.session.get("user_id")
+    admin_pending_orders_count = 0
+    admin_order_notifications = []
     return db.get(User, user_id) if user_id else None
 
 
@@ -680,8 +1015,47 @@ def require_user(user: Annotated[User | None, Depends(get_current_user)]):
     return user
 
 
+def resolve_admin_credentials_from_environment():
+    global ADMIN_EMAIL, ADMIN_PASSWORD
+    env_email = os.environ.get("ADMIN_EMAIL")
+    if env_email is not None:
+        ADMIN_EMAIL = env_email.strip().lower()
+    env_password = os.environ.get("ADMIN_PASSWORD")
+    if env_password is not None:
+        ADMIN_PASSWORD = env_password
+
+
+def normalize_role(role: str | None) -> str:
+    value = str(role or "customer").strip().lower()
+    return value if value in ROLE_LABELS else "customer"
+
+
+def user_has_any_role(user: User | None, *roles: str) -> bool:
+    if not user:
+        return False
+    normalized = normalize_role(user.role)
+    return normalized in {normalize_role(role) for role in roles}
+
+
+def user_is_admin(user: User | None) -> bool:
+    return bool(user) and user.role in {"admin", "super_admin", "developer"}
+
+
+def user_can_manage_role(user: User | None, target_role: str | None) -> bool:
+    if not user or not user.is_active:
+        return False
+    target = normalize_role(target_role)
+    if user.role == "developer":
+        return True
+    if user.role == "super_admin":
+        return target in {"customer", "agent", "admin", "super_admin", "developer"}
+    if user.role == "admin":
+        return target in {"customer", "agent"}
+    return False
+
+
 def require_admin(user: Annotated[User | None, Depends(get_current_user)]):
-    if user is None or user.role != "admin":
+    if not user_is_admin(user):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
@@ -750,7 +1124,8 @@ def storefront(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 @app.get("/shop", name="shop_page", response_class=HTMLResponse)
 def shop_page(request: Request, db: Annotated[Session, Depends(get_db)]):
-    available_products = db.query(Product).filter_by(is_active=True).order_by(Product.id).all()
+    shop_page_content = db.query(PageContent).filter_by(page_key="shop").first()
+    available_products = db.query(Product).filter_by(is_active=True).order_by(Product.display_order.asc(), Product.id.asc()).all()
     shop_categories = sorted({product.shop_category for product in available_products if product.shop_category})
     selected_shop_category = request.query_params.get("shop_category", "").strip()
     products = [
@@ -760,6 +1135,7 @@ def shop_page(request: Request, db: Annotated[Session, Depends(get_db)]):
     track_event(db, request, "page_view")
     return page(
         request, "shop.html", products=products,
+        shop_page=shop_page_content,
         shop_categories=shop_categories, selected_shop_category=selected_shop_category,
     )
 
@@ -880,11 +1256,37 @@ async def admin_login_submit(request: Request, db: Annotated[Session, Depends(ge
     form = await request.form()
     email = str(form.get("email", "")).strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
-    if user and user.role == "admin" and check_password_hash(user.password_hash, str(form.get("password", ""))):
+    if user and user_is_admin(user) and check_password_hash(user.password_hash, str(form.get("password", ""))):
         request.session.clear()
         request.session["user_id"] = user.id
         return safe_redirect(request, "admin_dashboard")
     return page(request, "auth.html", mode="admin", error="Admin credentials were not recognized.", form_data=dict(form))
+
+
+@app.get("/account/profile", name="account_profile", response_class=HTMLResponse)
+def account_profile(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    return page(request, "profile.html", user=user, profile_mode="customer")
+
+
+@app.post("/account/profile", name="account_profile_update", dependencies=[Depends(verify_csrf)])
+async def account_profile_update(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    first_name = str(form.get("first_name", user.first_name)).strip()
+    last_name = str(form.get("last_name", user.last_name)).strip()
+    phone = str(form.get("phone", user.phone)).strip()
+    if not first_name or not last_name:
+        raise HTTPException(status_code=400, detail="First and last names are required.")
+    file = form.get("profile_image")
+    if file and getattr(file, "filename", ""):
+        image = await read_product_image({"photo": file})
+        if image:
+            user.profile_image = save_product_image(image)
+    user.first_name = first_name
+    user.last_name = last_name
+    user.phone = phone
+    db.commit()
+    request.session["flash"] = ["success", "Your profile was updated."]
+    return safe_redirect(request, "account_profile")
 
 
 @app.post("/logout", name="logout", dependencies=[Depends(verify_csrf)])
@@ -928,6 +1330,108 @@ async def add_to_cart(product_id: int, request: Request, db: Annotated[Session, 
     request.session["flash"] = ["success", f"{product.name} added to your bag."]
     referrer = request.headers.get("referer")
     return RedirectResponse(referrer if referrer and referrer.startswith(str(request.base_url)) else "/", status_code=303)
+
+
+@app.post("/api/cart/add")
+async def api_cart_add(request: Request, db: Annotated[Session, Depends(get_db)]):
+    data = await request.json()
+    product_name = str(data.get("product", "")).strip()
+    color = str(data.get("color", "")).strip()
+    size = str(data.get("size", "")).strip()
+    try:
+        qty = int(data.get("quantity", 1))
+    except (ValueError, TypeError):
+        qty = 1
+    if qty < 1:
+        qty = 1
+
+    product = db.query(Product).filter_by(name=product_name, is_active=True).first()
+    if not product:
+        product = db.query(Product).filter_by(is_active=True).first()
+
+    if product:
+        cart = request.session.setdefault("cart", {})
+        line_key = cart_line_key(product.id, size, color)
+        cart[line_key] = int(cart.get(line_key, 0)) + qty
+        request.session["cart"] = cart
+
+    total_count = sum(request.session.get("cart", {}).values())
+    return {"success": True, "cart_count": total_count}
+
+
+@app.post("/api/cart/demo-order")
+async def api_cart_demo_order(request: Request, db: Annotated[Session, Depends(get_db)]):
+    data = await request.json()
+    items = data.get("items", [])
+    if not items:
+        return {"success": False, "detail": "Empty items"}
+
+    user_id = request.session.get("user_id")
+    user = db.get(User, user_id) if user_id else None
+    if not user:
+        visitor_email = "visitor@allofus.store"
+        user = db.query(User).filter_by(email=visitor_email).first()
+        if not user:
+            user = User(
+                email=visitor_email,
+                first_name="Store",
+                last_name="Visitor",
+                password_hash=hash_password("visitor123"),
+                role="customer",
+            )
+            db.add(user)
+            db.flush()
+
+    total_amount = Decimal("0.00")
+    order = Order(
+        user_id=user.id,
+        total_amount=Decimal("0.00"),
+        shipping_method="Standard",
+        shipping_fee=Decimal("0.00"),
+        address_line1="Storefront Visitor",
+        city="Storefront",
+        postal_code="10001",
+        status="Pending",
+    )
+    db.add(order)
+    db.flush()
+
+    for item in items:
+        p_name = item.get("product")
+        p_price = Decimal(str(item.get("price", 0)))
+        p_qty = int(item.get("quantity", 1))
+        p_size = str(item.get("size", ""))
+        p_color = str(item.get("color", ""))
+
+        prod = db.query(Product).filter_by(name=p_name).first()
+        prod_id = prod.id if prod else 1
+        unit_price = prod.price if prod else p_price
+
+        order_item = OrderItem(
+            order_id=order.id,
+            product_id=prod_id,
+            quantity=p_qty,
+            unit_price=unit_price,
+            size_variation=p_size,
+            color_variation=p_color,
+        )
+        db.add(order_item)
+        total_amount += unit_price * p_qty
+
+    order.total_amount = total_amount
+    request.session["cart"] = {}
+
+    log_entry = ActivityLog(
+        action="order_placed",
+        user_id=user.id,
+        entity_type="order",
+        entity_id=order.id,
+        details=f"Visitor order #{order.id} placed for Rs {total_amount:.2f}",
+    )
+    db.add(log_entry)
+    db.commit()
+
+    return {"success": True, "order_id": order.id, "total": float(total_amount)}
 
 
 @app.get("/cart", name="cart_view", response_class=HTMLResponse)
@@ -1022,6 +1526,16 @@ def checkout(request: Request, user: Annotated[User, Depends(require_user)], db:
             color_variation=color,
         ))
         product.stock_quantity -= quantity
+    db.flush()
+    create_activity_log(
+        db,
+        actor=user,
+        module="orders",
+        action="order_placed",
+        entity_type="order",
+        entity_id=order.id,
+        details=f"New order #{order.id:04d} placed by visitor {user.first_name} {user.last_name} ({user.email}) for Rs {total:.2f}.",
+    )
     db.commit()
     track_event(db, request, "purchase")
     request.session.pop("cart", None)
@@ -1031,6 +1545,8 @@ def checkout(request: Request, user: Annotated[User, Depends(require_user)], db:
 
 @app.get("/account/orders", name="order_history", response_class=HTMLResponse)
 def order_history_page(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    if user.is_admin_like:
+        return safe_redirect(request, "admin_orders")
     orders = db.query(Order).filter_by(user_id=user.id).order_by(Order.created_at.desc()).all()
     return page(request, "orders.html", orders=orders)
 
@@ -1056,6 +1572,12 @@ async def create_order_request(
     return safe_redirect(request, "order_history")
 
 
+@app.get("/admin/activities", name="admin_activities", response_class=HTMLResponse)
+def admin_activities(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    logs = db.query(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(100).all()
+    return page(request, "admin_activities.html", activity_logs=logs)
+
+
 @app.get("/admin", name="admin_dashboard", response_class=HTMLResponse)
 def admin_dashboard(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     all_customers = db.query(User).filter_by(role="customer").all()
@@ -1076,11 +1598,23 @@ def admin_dashboard(request: Request, _admin: Annotated[User, Depends(require_ad
 @app.get("/admin/content", name="admin_content", response_class=HTMLResponse)
 def admin_content(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     pages = db.query(PageContent).order_by(PageContent.id).all()
+    pages_by_key = {p.page_key: p for p in pages}
     messages = db.query(ContactMessage).order_by(ContactMessage.created_at.desc()).limit(50).all()
     unread_count = db.query(ContactMessage).filter_by(is_read=False).count()
+    active_tab = request.query_params.get("tab", "shop").strip().lower()
+    if active_tab not in {"shop", "about", "contact", "home", "messages"}:
+        active_tab = "shop"
+    products = db.query(Product).order_by(Product.display_order.asc(), Product.id.asc()).all()
     return page(
-        request, "admin_content.html", pages=pages,
-        messages=messages, unread_count=unread_count,
+        request, "admin_content.html",
+        pages=pages,
+        pages_by_key=pages_by_key,
+        products=products,
+        messages=messages,
+        unread_count=unread_count,
+        active_tab=active_tab,
+        active_module="content",
+        module_label="Content Studio",
     )
 
 
@@ -1113,20 +1647,20 @@ async def admin_content_update(
         raise HTTPException(status_code=404, detail="Page content not found")
     form = await request.form()
     fields = {
-        "hero_eyebrow": (100, True),
+        "hero_eyebrow": (100, False),
         "hero_heading": (240, True),
         "hero_intro": (2000, False),
         "hero_cta_label": (80, False),
         "hero_cta_url": (200, False),
-        "site_announcement": (240, True),
-        "hero_video_caption": (120, True),
-        "footer_tagline": (240, True),
+        "site_announcement": (240, False),
+        "hero_video_caption": (120, False),
+        "footer_tagline": (240, False),
         "section_eyebrow": (100, False),
         "section_heading": (240, False),
         "body": (10000, False),
         "closing_heading": (240, False),
         "closing_copy": (2000, False),
-        "meta_description": (320, True),
+        "meta_description": (320, False),
     }
     values = {name: str(form.get(name, "")).strip() for name in fields}
     for name, (maximum, required) in fields.items():
@@ -1143,9 +1677,126 @@ async def admin_content_update(
     for name, value in values.items():
         setattr(content, name, value)
     content.published = page_key == "home" or form.get("published") == "on"
+    hero_image = form.get("hero_image")
+    if hero_image and hasattr(hero_image, "filename") and hero_image.filename:
+        try:
+            valid_image = validate_product_image(hero_image)
+            if valid_image:
+                content.hero_image_path = save_product_image(valid_image)
+        except ValueError as exc:
+            request.session["flash"] = ["error", str(exc)]
+            return RedirectResponse(f"/admin/content?tab={page_key}&edit=1", status_code=303)
     db.commit()
-    request.session["flash"] = ["success", f"{page_key.title()} page content saved."]
-    return RedirectResponse("/admin/content", status_code=303)
+    request.session["flash"] = ["success", f"{page_key.title()} page content saved successfully."]
+    return RedirectResponse(f"/admin/content?tab={page_key}&edit=1", status_code=303)
+
+
+@app.post("/admin/content/products/{product_id}/move", name="admin_content_product_move", dependencies=[Depends(verify_csrf)])
+async def admin_content_product_move(
+    product_id: int,
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    form = await request.form()
+    direction = str(form.get("direction", "")).lower()
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    all_prods = db.query(Product).order_by(Product.display_order.asc(), Product.id.asc()).all()
+    for idx, p in enumerate(all_prods, start=1):
+        p.display_order = idx
+
+    current_idx = next((i for i, p in enumerate(all_prods) if p.id == product_id), None)
+    if current_idx is not None:
+        if direction == "up" and current_idx > 0:
+            target = all_prods[current_idx - 1]
+            all_prods[current_idx].display_order, target.display_order = target.display_order, all_prods[current_idx].display_order
+            db.commit()
+            request.session["flash"] = ["success", f"Moved '{product.name}' up in the shop orbit."]
+        elif direction == "down" and current_idx < len(all_prods) - 1:
+            target = all_prods[current_idx + 1]
+            all_prods[current_idx].display_order, target.display_order = target.display_order, all_prods[current_idx].display_order
+            db.commit()
+            request.session["flash"] = ["success", f"Moved '{product.name}' down in the shop orbit."]
+    return RedirectResponse("/admin/content?tab=shop&edit=1", status_code=303)
+
+
+@app.post("/admin/content/products/{product_id}/toggle", name="admin_content_product_toggle", dependencies=[Depends(verify_csrf)])
+async def admin_content_product_toggle(
+    product_id: int,
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    product.is_active = not product.is_active
+    db.commit()
+    status_str = "active in" if product.is_active else "hidden from"
+    request.session["flash"] = ["success", f"'{product.name}' is now {status_str} the shop orbit."]
+    return RedirectResponse("/admin/content?tab=shop&edit=1", status_code=303)
+
+
+@app.post("/admin/content/products/{product_id}/update", name="admin_content_product_update", dependencies=[Depends(verify_csrf)])
+async def admin_content_product_update(
+    product_id: int,
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    product = db.get(Product, product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    form = await request.form()
+    try:
+        product_values = parse_product_fields(form)
+        image = validate_product_image(form.get("photo"))
+    except ValueError as exc:
+        request.session["flash"] = ["error", str(exc)]
+        return RedirectResponse("/admin/content?tab=shop&edit=1", status_code=303)
+
+    if image:
+        product_values["photo_path"] = save_product_image(image)
+
+    product_values["is_active"] = form.get("is_active") == "on"
+    for field, value in product_values.items():
+        setattr(product, field, value)
+    db.commit()
+    request.session["flash"] = ["success", f"'{product.name}' details updated."]
+    return RedirectResponse("/admin/content?tab=shop&edit=1", status_code=303)
+
+
+@app.post("/admin/content/products/create", name="admin_content_product_create", dependencies=[Depends(verify_csrf)])
+async def admin_content_product_create(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    form = await request.form()
+    try:
+        product_values = parse_product_fields(form)
+        image = validate_product_image(form.get("photo"))
+    except ValueError as exc:
+        request.session["flash"] = ["error", str(exc)]
+        return RedirectResponse("/admin/content?tab=shop", status_code=303)
+
+    if image:
+        product_values["photo_path"] = save_product_image(image)
+    else:
+        product_values["photo_path"] = "images/henley-grey.png"
+
+    product_values["is_active"] = True
+    max_order = db.query(func.coalesce(func.max(Product.display_order), 0)).scalar()
+    product_values["display_order"] = (max_order or 0) + 1
+
+    new_prod = Product(**product_values)
+    db.add(new_prod)
+    db.commit()
+    request.session["flash"] = ["success", f"'{new_prod.name}' added directly to the Shop orbit!"]
+    return RedirectResponse("/admin/content?tab=shop", status_code=303)
 
 
 @app.post("/admin/contact-messages/{message_id}", name="update_contact_message", dependencies=[Depends(verify_csrf)])
@@ -1166,6 +1817,91 @@ async def update_contact_message(
     db.commit()
     request.session["flash"] = ["success", "Contact message updated."]
     return RedirectResponse("/admin/content", status_code=303)
+
+
+@app.get("/admin/accounts", name="admin_accounts", response_class=HTMLResponse)
+def admin_accounts(request: Request, db: Annotated[Session, Depends(get_db)]):
+    user = get_current_user(request, db)
+    if not user or not user_is_admin(user):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    accounts = db.query(Account).order_by(Account.code).all()
+    entries = db.query(JournalEntry).order_by(JournalEntry.created_at.desc()).limit(30).all()
+    balances = {account.id: get_account_balance(db, account.id) for account in accounts}
+    total_assets = sum((balances.get(account.id, Decimal("0.00")) for account in accounts if account.type == "ASSET"), Decimal("0.00"))
+    total_liabilities = sum((balances.get(account.id, Decimal("0.00")) for account in accounts if account.type == "LIABILITY"), Decimal("0.00"))
+    total_equity = sum((balances.get(account.id, Decimal("0.00")) for account in accounts if account.type == "EQUITY"), Decimal("0.00"))
+    return page(
+        request,
+        "admin_accounts.html",
+        accounts=accounts,
+        balances=balances,
+        entries=entries,
+        total_assets=total_assets,
+        total_liabilities=total_liabilities,
+        total_equity=total_equity,
+        active_module="accounts",
+    )
+
+
+@app.post("/admin/accounts/journal", name="create_journal_entry")
+async def create_journal_entry(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    user = get_current_user(request, db)
+    if not user or not user_is_admin(user):
+        return RedirectResponse("/admin/login", status_code=303)
+
+    form = await request.form()
+    date_text = str(form.get("date", "")).strip() or datetime.utcnow().strftime("%Y-%m-%d")
+    try:
+        posting_date = datetime.strptime(date_text, "%Y-%m-%d")
+    except ValueError:
+        posting_date = datetime.utcnow()
+
+    reference_type = str(form.get("reference_type", "ORDER")).strip().upper() or "ORDER"
+    reference_id = form.get("reference_id")
+    description = str(form.get("description", "")).strip()[:500]
+    lines = []
+    keys = sorted({key.rsplit("_", 1)[1] for key in form.keys() if key.startswith("account_id_")}, key=lambda value: int(value))
+    for key in keys:
+        account_id = form.get(f"account_id_{key}")
+        if not account_id:
+            continue
+        debit = Decimal(str(form.get(f"debit_{key}", "0") or "0"))
+        credit = Decimal(str(form.get(f"credit_{key}", "0") or "0"))
+        if debit == Decimal("0.00") and credit == Decimal("0.00"):
+            continue
+        lines.append({
+            "account_id": int(account_id),
+            "debit": debit,
+            "credit": credit,
+        })
+
+    try:
+        entry = post_journal_entry(
+            db,
+            date=posting_date,
+            reference_type=reference_type,
+            reference_id=int(reference_id) if reference_id not in (None, "") else None,
+            description=description,
+            lines=lines,
+        )
+        create_activity_log(
+            db,
+            actor=user,
+            module="accounts",
+            action="posted",
+            entity_type="journal_entry",
+            entity_id=entry.id,
+            details=f"Posted {reference_type} journal entry #{entry.id}.",
+        )
+        db.commit()
+        request.session["flash"] = ["success", "Journal entry posted successfully."]
+    except ValueError as exc:
+        request.session["flash"] = ["error", str(exc)]
+    return RedirectResponse("/admin/accounts", status_code=303)
 
 
 @app.get("/admin/reports", name="admin_reports", response_class=HTMLResponse)
@@ -1298,6 +2034,62 @@ def admin_inventory(request: Request, _admin: Annotated[User, Depends(require_ad
     return page(request, "admin_inventory.html", products=products, ordered_product_ids=ordered_product_ids)
 
 
+@app.get("/admin/rbac", name="admin_rbac", response_class=HTMLResponse)
+def admin_rbac(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    users = db.query(User).order_by(User.created_at.desc()).all()
+    return page(
+        request,
+        "admin_rbac.html",
+        users=users,
+        role_labels=ROLE_LABELS,
+        role_permissions=RBAC_ROLE_PERMISSIONS,
+    )
+
+
+@app.get("/admin/users", name="admin_users", response_class=HTMLResponse)
+def admin_users(request: Request, _admin: Annotated[User, Depends(require_admin)]):
+    return RedirectResponse("/admin/rbac", status_code=303)
+
+
+@app.post("/admin/users", name="create_user_account", dependencies=[Depends(verify_csrf)])
+async def create_user_account(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    first_name = str(form.get("first_name", "")).strip()
+    last_name = str(form.get("last_name", "")).strip()
+    email = str(form.get("email", "")).strip().lower()
+    phone = str(form.get("phone", "")).strip()
+    password = str(form.get("password", ""))
+    role = normalize_role(form.get("role"))
+    if not first_name or not last_name or not email or len(password) < 8 or not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Provide a valid first name, last name, email, and a password with at least 8 characters.")
+    if not user_can_manage_role(_admin, role):
+        raise HTTPException(status_code=403, detail="You do not have permission to create that account type.")
+    if db.query(User).filter(func.lower(User.email) == email).first():
+        raise HTTPException(status_code=409, detail="An account with that email already exists.")
+    user = User(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone=phone,
+        password_hash=generate_password_hash(password),
+        role=role,
+        marketing_opt_in=form.get("marketing_opt_in") == "on",
+    )
+    db.add(user)
+    if role == "agent":
+        agent_name = f"{first_name} {last_name}".strip()
+        agent = db.query(Agent).filter(func.lower(Agent.email) == email).first()
+        if not agent:
+            agent = Agent(name=agent_name, phone=phone, email=email)
+            db.add(agent)
+    db.flush()
+    create_activity_log(db, actor=_admin, module="users", action="created", entity_type="user", entity_id=user.id,
+                       details=f"Created {ROLE_LABELS.get(role, 'User')} account for {user.email}.")
+    db.commit()
+    request.session["flash"] = ["success", f"{ROLE_LABELS.get(role, 'User')} account created."]
+    return RedirectResponse("/admin/rbac", status_code=303)
+
+
 @app.get("/admin/agents", name="admin_agents", response_class=HTMLResponse)
 def admin_agents(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     agents = db.query(Agent).order_by(Agent.name).all()
@@ -1322,7 +2114,10 @@ async def create_agent(request: Request, _admin: Annotated[User, Depends(require
     name, phone, email = (str(form.get(field, "")).strip() for field in ("name", "phone", "email"))
     if not name or len(name) > 140 or len(phone) > 40 or len(email) > 255:
         raise HTTPException(status_code=400, detail="Enter valid agent contact details.")
-    db.add(Agent(name=name, phone=phone, email=email))
+    agent = Agent(name=name, phone=phone, email=email)
+    db.add(agent)
+    db.flush()
+    create_activity_log(db, actor=_admin, module="agents", action="created", entity_type="agent", entity_id=agent.id, details=f"Created agent {agent.name}.")
     db.commit()
     request.session["flash"] = ["success", "Agent created separately from customer CRM."]
     return RedirectResponse("/admin/agents", status_code=303)
@@ -1345,10 +2140,13 @@ async def allocate_agent_stock(request: Request, _admin: Annotated[User, Depends
     except (InvalidOperation, ValueError) as error:
         request.session["flash"] = ["error", str(error)]
         return RedirectResponse("/admin/agents", status_code=303)
-    db.add(AgentAllocation(agent_id=agent.id, product_id=product.id, quantity=quantity, remaining=quantity,
-                           size_variation=size, color_variation=color, list_price=product.price,
-                           company_discount_percent=discount, unit_cost=money(product.price * (1 - discount / 100))))
+    allocation = AgentAllocation(agent_id=agent.id, product_id=product.id, quantity=quantity, remaining=quantity,
+                                size_variation=size, color_variation=color, list_price=product.price,
+                                company_discount_percent=discount, unit_cost=money(product.price * (1 - discount / 100)))
+    db.add(allocation)
     product.stock_quantity -= quantity
+    create_activity_log(db, actor=_admin, module="agents", action="allocated", entity_type="allocation", entity_id=allocation.id,
+                       details=f"Allocated {quantity} {product.name} units to {agent.name}.")
     db.commit()
     request.session["flash"] = ["success", "Stock issued to agent. Record its eventual selling price in Sales."]
     return RedirectResponse("/admin/agents", status_code=303)
@@ -1388,11 +2186,14 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
                 "overview": "Business summary, customers, revenue, orders, low stock",
                 "content": "Website pages, publishing, contact messages",
                 "crm": "Customers, email, phone, marketing preferences, purchase history",
+                "users": "User account creation, access control, roles, and RBAC permissions",
                 "inventory": "Products, categories, prices, sizes, stock, add, edit, delete",
                 "agents": "Agent leaderboard, allocations, acquisition costs, sales, commission",
                 "sales": "Revenue, daily sales, best sellers, units sold",
                 "orders": "Order status, fulfillment, shipment and exchange requests",
+                "accounts": "Chart of accounts, journals, general ledger, balance sheet and cash movements",
                 "analytics": "Website visitors, page views, cart activity, conversion, SEO",
+                "activities": "Operational staff actions, agent assignments, content updates, approvals",
                 "reports": "Business reports, stock health, product performance",
             }
             for key, (label, endpoint) in ADMIN_MODULES.items():
@@ -1431,6 +2232,12 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
                 add_result(f"Order #{item.id}", detail, "admin_orders", anchor=f"#order-{item.id}", item_module="orders")
             for item in db.query(OrderServiceRequest).all():
                 add_result(f"{item.kind} request · Order #{item.order_id}", f"{item.status} · {item.notes} · {item.admin_note}", "admin_orders", item_module="orders")
+
+        if module in {"all", "accounts"}:
+            for account in db.query(Account).order_by(Account.code).all():
+                add_result(account.name, f"{account.code} · {account.type} · {account.normal_balance}", "admin_accounts", item_module="accounts")
+            for entry in db.query(JournalEntry).order_by(JournalEntry.created_at.desc()).limit(25).all():
+                add_result(f"Journal {entry.reference_type} #{entry.reference_id or 'N/A'}", f"{entry.description or 'General ledger entry'} · {entry.date:%Y-%m-%d}", "admin_accounts", item_module="accounts")
 
         if module in {"all", "analytics", "reports"}:
             sections = {

@@ -22,6 +22,13 @@
     </form>
   </div>
 
+  {% if admin_pending_orders_count and admin_pending_orders_count > 0 %}
+  <div class="orders-pending-alert">
+    <span class="notif-pulse-dot"></span>
+    <span><strong>Order Placed Notifications:</strong> {{ admin_pending_orders_count }} order{{ 's' if admin_pending_orders_count != 1 else '' }} placed by store visitors awaiting fulfillment.</span>
+  </div>
+  {% endif %}
+
   <div class="table-wrap">
     <table>
       <thead>

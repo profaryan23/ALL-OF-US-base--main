@@ -1,35 +1,365 @@
 {% extends "admin_base.html" %}
 {% block module_title %}Content{% endblock %}
 {% block module_heading %}Content studio{% endblock %}
-{% block module_content %}
-<section class="admin-section module-section">
-  <div class="admin-section-head"><div><p class="eyebrow">Website pages</p><h2>Manage your pages.</h2></div><p class="content-help">Edit copy, page descriptions, and publishing status. Changes appear on the live site when saved.</p></div>
-  <div class="content-page-list">
-    {% for item in pages %}
-    <article class="content-page-card">
-      <div><p class="eyebrow">{{ item.page_key }}</p><h3>{{ item.hero_heading.replace('\n', ' ') }}</h3><p>{{ item.meta_description }}</p></div>
-      <div class="content-page-actions">
-        {% if item.page_key == 'home' %}<span class="content-status content-status-live">Always live</span>
-        {% elif item.published %}<span class="content-status content-status-live">Published</span>
-        {% else %}<span class="content-status">Draft</span>{% endif %}
-        {% if item.page_key == 'home' %}<a class="back-link" href="{{ url_for('storefront') }}">Preview ↗</a>
-        {% elif item.published and item.page_key == 'about' %}<a class="back-link" href="{{ url_for('about_page') }}">Preview ↗</a>
-        {% elif item.published %}<a class="back-link" href="{{ url_for('contact_page') }}">Preview ↗</a>
-        {% else %}<span class="content-status">Not public</span>{% endif %}
-        <a class="save-button" href="{{ url_for('admin_content_edit', page_key=item.page_key) }}">Edit page</a>
-      </div>
-    </article>
-    {% endfor %}
-  </div>
-</section>
 
-<section class="admin-section content-inbox">
-  <div class="admin-section-head"><div><p class="eyebrow">Contact form inbox</p><h2>Messages from visitors.</h2></div><span class="content-unread">{{ unread_count }} unread</span></div>
+{% block module_content %}
+<div class="content-studio-header">
+  <div class="admin-section-head" style="margin-bottom: 14px;">
+    <div>
+      <p class="eyebrow">STOREFRONT CMS & PAGES</p>
+      <h2>Website pages.</h2>
+    </div>
+    <p class="content-help">Click any page below to view its live storefront right in the admin panel and make updates to copy, layout, and catalog items.</p>
+  </div>
+
+  <!-- Content Pages Navigation Pills -->
+  <nav class="content-studio-tabs" aria-label="Content Studio Pages">
+    <a href="{{ url_for('admin_content') }}?tab=shop" class="content-studio-tab {% if active_tab == 'shop' %}active{% endif %}">
+      <span>🛍️</span>
+      <strong>Shop page</strong>
+      <span class="content-tab-badge">{{ products|selectattr('is_active')|list|length }} in orbit</span>
+    </a>
+    <a href="{{ url_for('admin_content') }}?tab=about" class="content-studio-tab {% if active_tab == 'about' %}active{% endif %}">
+      <span>📖</span>
+      <strong>About page</strong>
+      <span class="content-tab-badge">{% if pages_by_key.get('about') and pages_by_key.get('about').published %}Live{% else %}Draft{% endif %}</span>
+    </a>
+    <a href="{{ url_for('admin_content') }}?tab=contact" class="content-studio-tab {% if active_tab == 'contact' %}active{% endif %}">
+      <span>✉️</span>
+      <strong>Contact page</strong>
+      <span class="content-tab-badge">{% if pages_by_key.get('contact') and pages_by_key.get('contact').published %}Live{% else %}Draft{% endif %}</span>
+    </a>
+    <a href="{{ url_for('admin_content') }}?tab=home" class="content-studio-tab {% if active_tab == 'home' %}active{% endif %}">
+      <span>🏠</span>
+      <strong>Home page</strong>
+      <span class="content-tab-badge">Live</span>
+    </a>
+    <a href="{{ url_for('admin_content') }}?tab=messages" class="content-studio-tab {% if active_tab == 'messages' %}active{% endif %}">
+      <span>📬</span>
+      <strong>Inbox</strong>
+      {% if unread_count and unread_count > 0 %}
+        <span class="content-tab-badge" style="background: #e11d48; color: #ffffff;">{{ unread_count }} new</span>
+      {% else %}
+        <span class="content-tab-badge">0 new</span>
+      {% endif %}
+    </a>
+  </nav>
+</div>
+
+<!-- ========================================================
+     STOREFRONT LIVE VIEW EMBED WITH EDIT DRAWER
+     ======================================================== -->
+{% if active_tab in ['shop', 'about', 'contact', 'home'] %}
+
+{% set current_url = url_for('shop_page') if active_tab == 'shop' else (url_for('about_page') if active_tab == 'about' else (url_for('contact_page') if active_tab == 'contact' else url_for('storefront'))) %}
+{% set page_title_label = 'Shop Essentials (/shop)' if active_tab == 'shop' else ('About Page (/about)' if active_tab == 'about' else ('Contact Page (/contact)' if active_tab == 'contact' else 'Home Storefront (/)')) %}
+
+<div class="storefront-stage-wrapper" style="display: flex; flex-direction: column;">
+  <!-- Stage Top Control Bar -->
+  <div class="storefront-stage-bar" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 1px solid #dfded7; border-radius: 6px 6px 0 0; padding: 10px 18px;">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <span style="display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #10b981; box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);"></span>
+      <strong style="font-size: 12.5px; color: #111;">Storefront View: {{ page_title_label }}</strong>
+    </div>
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <button type="button" class="orbit-btn" id="toggleEditBtn" onclick="toggleEditPanel()" style="background: #111111; color: #ffffff; font-weight: 600;">
+        ✎ Edit Page Content & Settings
+      </button>
+      <a href="{{ current_url }}" target="_blank" class="orbit-btn" title="Open public view in a new tab">
+        Open full screen ↗
+      </a>
+    </div>
+  </div>
+
+  <!-- Collapsible Editor Panel (Revealed by clicking Edit button) -->
+  <div id="contentEditDrawer" style="display: {% if request.query_params.get('edit') == '1' %}block{% else %}none{% endif %}; background: #faf9f6; border: 1px solid #dfded7; border-top: none; padding: 22px 24px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.03);">
+
+    {% if active_tab == 'shop' %}
+    <!-- SHOP PAGE EDITOR -->
+    {% set shop_item = pages_by_key.get('shop') %}
+    <div style="display: grid; gap: 24px;">
+      <!-- Part A: Page Copy -->
+      <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
+        <div style="margin-bottom: 16px;">
+          <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 4px 0;">Shop Essentials copy</h3>
+          <p style="font-size: 11px; color: #666; margin: 0;">Changes update the collection title, eyebrow, and black header announcement bar live on <code>/shop</code>.</p>
+        </div>
+        <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key='shop') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="content-editor-grid">
+            <label>
+              <span>Page eyebrow</span>
+              <input name="hero_eyebrow" value="{{ shop_item.hero_eyebrow if shop_item else 'THE COLLECTION' }}" maxlength="100">
+            </label>
+            <label>
+              <span>Collection title</span>
+              <input name="hero_heading" value="{{ shop_item.hero_heading if shop_item else 'Shop Essentials' }}" maxlength="240" required>
+            </label>
+            <label class="content-field-wide">
+              <span>Collection introduction note</span>
+              <textarea name="hero_intro" rows="2" maxlength="2000">{{ shop_item.hero_intro if shop_item else '' }}</textarea>
+            </label>
+            <label class="content-field-wide">
+              <span>Black header announcement bar</span>
+              <input name="site_announcement" value="{{ shop_item.site_announcement if shop_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240">
+            </label>
+            <label class="content-field-wide">
+              <span>SEO meta description</span>
+              <textarea name="meta_description" rows="2" maxlength="320" required>{{ shop_item.meta_description if shop_item else 'Shop the All of Us collection — animated stitched-circle apparel selector with product details, size/color/quantity selection, and a multi-item demo shopping bag.' }}</textarea>
+            </label>
+            <label class="content-publish">
+              <input type="checkbox" name="published" {% if not shop_item or shop_item.published %}checked{% endif %}>
+              <span>Publish Shop page</span>
+            </label>
+          </div>
+          <div class="content-editor-actions">
+            <button class="save-button" type="submit">Save Shop copy</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Part B: Revolving Orbit Products (Move, Reorder, Replace, Add) -->
+      <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+          <div>
+            <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 4px 0;">Circular orbit products</h3>
+            <p style="font-size: 11px; color: #666; margin: 0;">Reorder, activate/hide, or edit products in the revolving orbit on <code>/shop</code>.</p>
+          </div>
+          <button type="button" class="orbit-btn" style="background: #111; color: #fff;" onclick="document.getElementById('orbitAddBox').style.display = document.getElementById('orbitAddBox').style.display === 'none' ? 'block' : 'none';">
+            + Add product to orbit
+          </button>
+        </div>
+
+        <!-- Add product box -->
+        <div class="orbit-add-box" id="orbitAddBox" style="display: none;">
+          <form method="post" action="{{ url_for('admin_content_product_create') }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="orbit-add-form-grid">
+              <label><span>Product name *</span><input name="name" required placeholder="e.g. Linen Shirt"></label>
+              <label><span>Category *</span><input name="category" required placeholder="e.g. Tops, Bottoms"></label>
+              <label><span>Shop category *</span><input name="shop_category" required value="Everyday"></label>
+              <label><span>Price (Rs) *</span><input type="number" name="price" step="0.01" min="1" required placeholder="1800.00"></label>
+              <label><span>Stock quantity *</span><input type="number" name="stock_quantity" min="0" value="40" required></label>
+              <label><span>Upload photo</span><input type="file" name="photo" accept="image/*"></label>
+              <label class="wide-col"><span>Description</span><textarea name="description" rows="2"></textarea></label>
+            </div>
+            <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+              <button type="button" class="orbit-btn" onclick="document.getElementById('orbitAddBox').style.display='none'">Cancel</button>
+              <button class="save-button" type="submit">+ Add to orbit</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Product list -->
+        <div class="orbit-product-list">
+          {% for p in products %}
+          {% set is_active_in_orbit = p.is_active %}
+          <article class="orbit-product-row {% if not is_active_in_orbit %}is-hidden{% endif %}">
+            <div class="orbit-product-info">
+              {% if is_active_in_orbit %}
+                <span class="orbit-slot-badge">SLOT #{{ loop.index }}</span>
+              {% else %}
+                <span class="orbit-slot-badge badge-hidden">HIDDEN</span>
+              {% endif %}
+              <img class="orbit-thumb" src="{{ url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png') }}" alt="{{ p.name }}">
+              <div class="orbit-product-meta">
+                <strong>{{ p.name }}</strong>
+                <span>{{ p.category }} · Rs {{ "%.2f"|format(p.price|float) }} · {{ p.stock_quantity }} units</span>
+              </div>
+            </div>
+
+            <div class="orbit-product-actions">
+              <form method="post" action="{{ url_for('admin_content_product_move', product_id=p.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="direction" value="up">
+                <button type="submit" class="orbit-btn" {% if loop.first %}disabled{% endif %}>↑ Up</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_content_product_move', product_id=p.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="direction" value="down">
+                <button type="submit" class="orbit-btn" {% if loop.last %}disabled{% endif %}>↓ Down</button>
+              </form>
+              <form method="post" action="{{ url_for('admin_content_product_toggle', product_id=p.id) }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="orbit-btn {% if is_active_in_orbit %}orbit-btn-danger{% endif %}">{% if is_active_in_orbit %}Hide{% else %}Activate{% endif %}</button>
+              </form>
+              <button type="button" class="orbit-btn" onclick="var el = document.getElementById('quickEdit-{{ p.id }}'); el.style.display = el.style.display === 'none' ? 'block' : 'none';">Edit ✎</button>
+            </div>
+          </article>
+
+          <!-- Quick edit row -->
+          <div id="quickEdit-{{ p.id }}" style="display: none; background: #ffffff; border: 1px solid #d4d2c9; border-radius: 6px; padding: 16px; margin-top: -6px; margin-bottom: 8px;">
+            <form method="post" action="{{ url_for('admin_content_product_update', product_id=p.id) }}" enctype="multipart/form-data">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="orbit-add-form-grid">
+                <label><span>Product name</span><input name="name" value="{{ p.name }}" required></label>
+                <label><span>Category</span><input name="category" value="{{ p.category }}" required></label>
+                <label><span>Shop category</span><input name="shop_category" value="{{ p.shop_category }}" required></label>
+                <label><span>Price (Rs)</span><input type="number" name="price" step="0.01" min="1" value="{{ "%.2f"|format(p.price|float) }}" required></label>
+                <label><span>Stock quantity</span><input type="number" name="stock_quantity" min="0" value="{{ p.stock_quantity }}" required></label>
+                <label><span>Replace photo</span><input type="file" name="photo" accept="image/*"></label>
+                <label class="wide-col"><span>Description</span><textarea name="description" rows="2">{{ p.description }}</textarea></label>
+                <label style="display: flex; align-items: center; gap: 8px;" class="wide-col">
+                  <input type="checkbox" name="is_active" {% if p.is_active %}checked{% endif %} style="width: auto;">
+                  <span>Show in circular Shop orbit</span>
+                </label>
+              </div>
+              <div style="margin-top: 12px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="orbit-btn" onclick="document.getElementById('quickEdit-{{ p.id }}').style.display='none'">Cancel</button>
+                <button class="save-button" type="submit">Update product</button>
+              </div>
+            </form>
+          </div>
+          {% endfor %}
+        </div>
+      </section>
+    </div>
+
+    {% elif active_tab == 'about' %}
+    <!-- ABOUT PAGE EDITOR -->
+    {% set about_item = pages_by_key.get('about') %}
+    <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
+      <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 16px 0;">Edit About page content</h3>
+      <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key='about') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="content-editor-grid">
+          <label><span>Page eyebrow</span><input name="hero_eyebrow" value="{{ about_item.hero_eyebrow if about_item else 'A little more like home' }}" maxlength="100"></label>
+          <label><span>Page headline</span><input name="hero_heading" value="{{ about_item.hero_heading if about_item else 'Good things are better together.' }}" maxlength="240" required></label>
+          <label class="content-field-wide"><span>Introduction</span><textarea name="hero_intro" rows="2" maxlength="2000">{{ about_item.hero_intro if about_item else '' }}</textarea></label>
+          <label><span>Section eyebrow</span><input name="section_eyebrow" value="{{ about_item.section_eyebrow if about_item else 'Our story' }}" maxlength="100"></label>
+          <label><span>Section heading</span><input name="section_heading" value="{{ about_item.section_heading if about_item else 'Made for being together.' }}" maxlength="240"></label>
+          <label class="content-field-wide"><span>Our story & body text</span><textarea name="body" rows="6" maxlength="10000">{{ about_item.body if about_item else '' }}</textarea></label>
+          <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ about_item.meta_description if about_item else 'Get to know All of Us and our thoughtful pieces for everyday life and being together.' }}</textarea></label>
+          <label class="content-publish"><input type="checkbox" name="published" {% if not about_item or about_item.published %}checked{% endif %}><span>Publish About page</span></label>
+        </div>
+        <div class="content-editor-actions">
+          <button class="save-button" type="submit">Save About page</button>
+        </div>
+      </form>
+    </section>
+
+    {% elif active_tab == 'contact' %}
+    <!-- CONTACT PAGE EDITOR -->
+    {% set contact_item = pages_by_key.get('contact') %}
+    <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
+      <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 16px 0;">Edit Contact page content</h3>
+      <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key='contact') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="content-editor-grid">
+          <label><span>Page eyebrow</span><input name="hero_eyebrow" value="{% if contact_item and contact_item.hero_eyebrow %}{{ contact_item.hero_eyebrow }}{% else %}We&#39;d love to hear from you{% endif %}" maxlength="100"></label>
+          <label><span>Page headline</span><input name="hero_heading" value="{% if contact_item and contact_item.hero_heading %}{{ contact_item.hero_heading }}{% else %}Let&#39;s make a connection.{% endif %}" maxlength="240" required></label>
+          <label class="content-field-wide"><span>Introduction note</span><textarea name="hero_intro" rows="2" maxlength="2000">{{ contact_item.hero_intro if contact_item else '' }}</textarea></label>
+          <label><span>Section eyebrow</span><input name="section_eyebrow" value="{{ contact_item.section_eyebrow if contact_item else 'Get in touch' }}" maxlength="100"></label>
+          <label><span>Section heading</span><input name="section_heading" value="{{ contact_item.section_heading if contact_item else 'Write us a note.' }}" maxlength="240"></label>
+          <label class="content-field-wide"><span>Form instructions</span><textarea name="body" rows="3" maxlength="10000">{{ contact_item.body if contact_item else 'Use the form below and our team will be in touch.' }}</textarea></label>
+          <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ contact_item.meta_description if contact_item else 'Contact All of Us with questions about products, orders, or anything else.' }}</textarea></label>
+          <label class="content-publish"><input type="checkbox" name="published" {% if not contact_item or contact_item.published %}checked{% endif %}><span>Publish Contact page</span></label>
+        </div>
+        <div class="content-editor-actions">
+          <button class="save-button" type="submit">Save Contact page</button>
+        </div>
+      </form>
+    </section>
+
+    {% elif active_tab == 'home' %}
+    <!-- HOME PAGE EDITOR -->
+    {% set home_item = pages_by_key.get('home') %}
+    <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
+      <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 4px 0;">Edit Home page content</h3>
+      <p style="font-size: 11px; color: #666; margin: 0 0 16px 0;">Manage the editorial hero photo, headline typography, CTA button, announcements, and featured section.</p>
+      
+      <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key='home') }}" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="content-editor-grid">
+          <!-- Hero Editorial Image Upload & Preview -->
+          <div class="content-field-wide" style="display: flex; align-items: center; gap: 20px; background: #faf9f6; padding: 14px 18px; border: 1px solid #e2e0dc; border-radius: 6px;">
+            <img src="{{ url_for('static', filename=home_item.hero_image_path if (home_item and home_item.hero_image_path) else 'images/home-hero.png') }}" alt="Current Hero" style="width: 140px; height: 80px; object-fit: cover; border-radius: 4px; border: 1px solid #d0cebf;">
+            <div style="flex: 1;">
+              <span style="display: block; font-size: 11px; font-weight: 600; color: #111; margin-bottom: 3px;">Hero editorial photograph</span>
+              <p style="font-size: 10px; color: #666; margin: 0 0 8px 0;">Currently active: <code>{{ home_item.hero_image_path if (home_item and home_item.hero_image_path) else 'images/home-hero.png' }}</code></p>
+              <label style="display: inline-block;">
+                <input type="file" name="hero_image" accept="image/*" style="font-size: 11px;">
+              </label>
+            </div>
+          </div>
+
+          <label><span>Hero eyebrow</span><input name="hero_eyebrow" value="{{ home_item.hero_eyebrow if home_item else 'Made for everyday together' }}" maxlength="100"></label>
+          <label><span>Photo caption</span><input name="hero_video_caption" value="{{ home_item.hero_video_caption if home_item else 'ALL OF US / EDITORIAL' }}" maxlength="120"></label>
+          
+          <label class="content-field-wide"><span>Hero headline (each line on new line)</span><textarea name="hero_heading" rows="3" maxlength="240" required>{{ home_item.hero_heading if home_item else 'Good things
+have a way of
+bringing us in.' }}</textarea><small>For a multi-line headline with italic emphasis on the last line, place each line on a new line.</small></label>
+          <label class="content-field-wide"><span>Hero introduction</span><textarea name="hero_intro" rows="2" maxlength="2000">{{ home_item.hero_intro if home_item else 'Thoughtful pieces for the rituals, rooms, and people that make a life feel like yours.' }}</textarea></label>
+          
+          <label><span>CTA button label</span><input name="hero_cta_label" value="{{ home_item.hero_cta_label if home_item else 'Find your something' }}" maxlength="80"></label>
+          <label><span>CTA button link</span><input name="hero_cta_url" value="{{ home_item.hero_cta_url if home_item else '/shop' }}" maxlength="200" placeholder="/shop"></label>
+          
+          <label class="content-field-wide"><span>Site announcement banner</span><input name="site_announcement" value="{{ home_item.site_announcement if home_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240"></label>
+          
+          <label><span>Featured section eyebrow</span><input name="section_eyebrow" value="{{ home_item.section_eyebrow if home_item else 'The good shelf' }}" maxlength="100"></label>
+          <label><span>Featured section heading</span><input name="section_heading" value="{{ home_item.section_heading if home_item else 'Things to keep close.' }}" maxlength="240"></label>
+          
+          <label class="content-field-wide"><span>Closing heading</span><textarea name="closing_heading" rows="2" maxlength="240">{{ home_item.closing_heading if home_item else 'For the everyday
+and the once-in-a-whiles.' }}</textarea></label>
+          <label class="content-field-wide"><span>Closing note</span><textarea name="closing_copy" rows="2" maxlength="2000">{{ home_item.closing_copy if home_item else "Made with the idea that\nthere's room for everyone." }}</textarea></label>
+          
+          <label><span>Footer tagline</span><input name="footer_tagline" value="{{ home_item.footer_tagline if home_item else 'Good things are better together.' }}" maxlength="240"></label>
+          <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ home_item.meta_description if home_item else 'Shop thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.' }}</textarea></label>
+        </div>
+        <div class="content-editor-actions">
+          <button class="save-button" type="submit">Save Home page</button>
+        </div>
+      </form>
+    </section>
+    {% endif %}
+
+  </div>
+
+  <!-- THE STOREFRONT LIVE VIEW FRAME -->
+  <div class="storefront-frame-wrapper" style="width: 100%; height: calc(100vh - 175px); min-height: 720px; background: #fbf8f3; border: 1px solid #dfded7; border-top: none; border-radius: 0 0 6px 6px; overflow: hidden; position: relative; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+    <iframe id="storefrontPreviewIframe" src="{{ current_url }}" style="width: 100%; height: 100%; border: none; display: block;" title="Storefront Live View"></iframe>
+  </div>
+</div>
+
+<script>
+function toggleEditPanel() {
+  var drawer = document.getElementById('contentEditDrawer');
+  var btn = document.getElementById('toggleEditBtn');
+  if (drawer.style.display === 'none' || drawer.style.display === '') {
+    drawer.style.display = 'block';
+    btn.textContent = '✕ Close Editor';
+  } else {
+    drawer.style.display = 'none';
+    btn.textContent = '✎ Edit Page Content & Settings';
+  }
+}
+</script>
+
+{% elif active_tab == 'messages' %}
+<!-- ========================================================
+     INBOX / MESSAGES TAB
+     ======================================================== -->
+<section class="content-card-section">
+  <div class="content-card-head">
+    <div>
+      <p class="eyebrow">VISITOR INBOX</p>
+      <h3>Contact form messages</h3>
+      <p>Inquiries received from store visitors through the Contact page.</p>
+    </div>
+    <span class="orbit-slot-badge">{{ unread_count }} unread</span>
+  </div>
+
   {% if messages %}
   <div class="content-message-list">
     {% for message in messages %}
     <article class="content-message{% if not message.is_read %} content-message-unread{% endif %}">
-      <div class="content-message-head"><div><strong>{{ message.subject }}</strong><span>{{ message.name }} · <a href="mailto:{{ message.email }}">{{ message.email }}</a></span></div><time>{{ message.created_at.strftime('%b %d, %Y · %H:%M') }} UTC</time></div>
+      <div class="content-message-head">
+        <div>
+          <strong>{{ message.subject }}</strong>
+          <span>{{ message.name }} · <a href="mailto:{{ message.email }}">{{ message.email }}</a></span>
+        </div>
+        <time>{{ message.created_at.strftime('%b %d, %Y · %H:%M') }} UTC</time>
+      </div>
       <p>{{ message.message }}</p>
       <form method="post" action="{{ url_for('update_contact_message', message_id=message.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -39,7 +369,10 @@
     </article>
     {% endfor %}
   </div>
-  {% else %}<p class="table-empty">No contact messages yet.</p>{% endif %}
-  <p class="report-note">Messages are saved here; email delivery and reply tracking are not configured.</p>
+  {% else %}
+  <p class="table-empty">No visitor messages received yet.</p>
+  {% endif %}
 </section>
+{% endif %}
+
 {% endblock %}

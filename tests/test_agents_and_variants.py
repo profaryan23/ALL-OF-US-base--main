@@ -161,6 +161,40 @@ class AgentAndVariantTests(unittest.TestCase):
         with TestClient(main.app) as anonymous:
             self.assertEqual(anonymous.get('/admin/agents').status_code, 403)
 
+    def test_admin_can_create_customer_and_agent_accounts_via_rbac(self):
+        response = self.client.post('/admin/users', data={
+            'csrf_token': self.token,
+            'first_name': 'Agent',
+            'last_name': 'Account',
+            'email': 'agent.account@example.com',
+            'phone': '9801234567',
+            'password': 'agent-pass-wd',
+            'role': 'agent',
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with main.SessionLocal() as db:
+            agent_user = db.query(main.User).filter_by(email='agent.account@example.com').one()
+            self.assertEqual(agent_user.role, 'agent')
+            self.assertTrue(db.query(main.Agent).filter_by(email='agent.account@example.com').first())
+
+        response = self.client.post('/admin/users', data={
+            'csrf_token': self.token,
+            'first_name': 'Customer',
+            'last_name': 'User',
+            'email': 'customer.user@example.com',
+            'phone': '9807654321',
+            'password': 'customer-pass',
+            'role': 'customer',
+        }, follow_redirects=True)
+        self.assertEqual(response.status_code, 200)
+        with main.SessionLocal() as db:
+            customer_user = db.query(main.User).filter_by(email='customer.user@example.com').one()
+            self.assertEqual(customer_user.role, 'customer')
+
+        with TestClient(main.app) as anonymous:
+            self.assertEqual(anonymous.get('/admin/users').status_code, 403)
+            self.assertEqual(anonymous.post('/admin/users', data={'first_name': 'Hacker', 'last_name': 'User', 'email': 'hacker@example.com', 'password': 'passpass', 'role': 'customer'}).status_code, 400)
+
 
 if __name__ == '__main__':
     unittest.main()

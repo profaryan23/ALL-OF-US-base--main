@@ -115,6 +115,27 @@ This file records implemented changes and practical follow-up work for the All o
 - Add automated regression tests for admin authentication, reports and date filters, inventory/order workflows, and customer data isolation.
 - Decide on backups, production database hosting, monitoring, and retention/privacy rules for customer activity data.
 
+## 2026-10-26 — RBAC, Activity Ledger & Financial Accounting
+
+### Completed
+- Added a four-role RBAC model in documentation and runtime logic: `super_admin`/`developer`, `admin`, `agent`, and `customer`.
+- Kept the admin and super-admin permissions broad while restricting customer access to order and personal account functionality.
+- Added a dedicated admin Activity module that shows recent updates, agent allocations, and content or order actions in one operational log.
+- Added public and admin profile support with optional profile-image uploads for customers, admins, and agents.
+- Added immutable accounting primitives: chart-of-accounts table, journal entry headers, balanced journal lines, and transactional posting logic for revenue, fee, COGS, and operating-expense events.
+- Seeded the default chart of accounts with cash, inventory, revenue, COGS, fee, and expense accounts to support automated financial entries.
+- Updated the admin search index to include the Activities workspace and keep the new module discoverable from the admin navigation.
+
+### Completed
+- Added a dedicated accounting module in the admin workspace to manage chart-of-accounts, general ledger balances, and journal entry posting.
+- Added journal-entry posting form and account summary panel for assets, liabilities, equity, and recent ledger activity.
+- Exposed the accounting module in the admin navigation and search index for discovery.
+
+### Future Work
+- Wire order, fee, and expense workflows directly to the accounting service from checkout and fulfillment flows.
+- Expand the admin dashboard with gross margin, net margin, and cash-flow KPI cards built from the ledger tables.
+- Add a full balance-sheet and P&L drill-down with date filtering and reporting export.
+
 ## 2026-10-03 — Initial Requirements & Module Work
 
 ### Completed
