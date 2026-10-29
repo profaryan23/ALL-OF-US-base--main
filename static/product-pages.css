@@ -1,3 +1,7 @@
+.brand-link { display: inline-flex; align-items: center; gap: 12px; justify-self: start; flex-shrink: 0; }
+.brand-link .brand-logo { display: block; width: 64px; height: 64px; object-fit: contain; background: #000; flex-shrink: 0; }
+.studio-brand { margin-bottom: 20px; color: inherit; font-size: 14px; font-weight: 600; }
+@media (max-width: 620px) { .brand-link .brand-logo { width: 48px; height: 48px; } }
 .checkout-form { display: grid; gap: 20px; max-width: 680px; }
 .checkout-form label { display: grid; gap: 8px; }
 .checkout-form input:not([type="radio"]):not([type="checkbox"]),

@@ -6,12 +6,14 @@
   <meta name="theme-color" content="#f4f2ec">
   <meta name="description" content="{% block meta_description %}Thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.{% endblock %}">
   <title>{% block title %}All of Us{% endblock %} · All of Us</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='fav-icon.png') }}?v=1">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='fav-icon.png') }}?v=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20261028-6">
   <link rel="stylesheet" href="{{ url_for('static', filename='monochrome.css') }}?v=20261028-6">
-  <link rel="stylesheet" href="{{ url_for('static', filename='product-pages.css') }}?v=20261028-6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='product-pages.css') }}?v=20261029-logo">
 </head>
 {% set is_admin_dashboard = request.url.path.startswith('/admin') and request.url.path != '/admin/login' %}
 {% set is_shop_page = request.url.path == '/shop' %}
@@ -20,7 +22,7 @@
   {% if not is_admin_dashboard %}
   <div class="announcement">{{ site_content.site_announcement }}</div>
   <header class="site-header">
-    <a class="wordmark" href="{{ url_for('storefront') }}">ALL OF US</a>
+    <a class="wordmark brand-link" href="{{ url_for('storefront') }}" aria-label="All of Us home"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="64" height="64"></a>
     <nav class="main-nav" aria-label="Main navigation">
       <a href="{{ url_for('storefront') }}" class="{% if request.url.path == '/' %}nav-active{% endif %}">Home</a>
       <a href="{{ url_for('shop_page') }}" class="{% if request.url.path == '/shop' %}nav-active{% endif %}">Shop</a>
@@ -43,7 +45,7 @@
     {% block content %}{% endblock %}
   </main>
   {% if not is_admin_dashboard %}
-  <footer class="site-footer"><a class="wordmark footer-mark" href="{{ url_for('storefront') }}">ALL OF US</a><span>{{ site_content.footer_tagline }}</span><div class="footer-links"><a href="{{ url_for('about_page') }}">About</a><a href="{{ url_for('contact_page') }}">Contact</a><a href="{{ url_for('admin_login') }}">Team access</a></div></footer>
+  <footer class="site-footer"><a class="wordmark footer-mark brand-link" href="{{ url_for('storefront') }}" aria-label="All of Us home"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="64" height="64" loading="lazy"></a><span>{{ site_content.footer_tagline }}</span><div class="footer-links"><a href="{{ url_for('about_page') }}">About</a><a href="{{ url_for('contact_page') }}">Contact</a><a href="{{ url_for('admin_login') }}">Team access</a></div></footer>
   {% endif %}
   <script src="{{ url_for('static', filename='app.js') }}?v=20261028-6" defer></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='variants.css') }}?v=1">

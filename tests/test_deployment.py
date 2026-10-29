@@ -78,6 +78,20 @@ class DeploymentTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)
 
+    def test_brand_logo_and_favicon_are_served_on_shared_pages(self):
+        response = self.client.get('/static/fav-icon.png')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['content-type'], 'image/png')
+        self.assertEqual(response.content, Path('static/fav-icon.png').read_bytes())
+        self.assertTrue(response.content.startswith(b'\x89PNG\r\n\x1a\n'))
+        for path in ('/', '/shop', '/about', '/contact', '/admin/login'):
+            with self.subTest(path=path):
+                html = self.client.get(path).text
+                self.assertIn('rel="icon" type="image/png"', html)
+                self.assertIn('/static/fav-icon.png?v=1', html)
+                self.assertIn('class="brand-logo"', html)
+                self.assertIn('alt="All of Us"', html)
+
     def test_uploaded_image_is_served_from_configured_directory(self):
         content = b"\x89PNG\r\n\x1a\nexample"
         image_path = main.save_product_image((".png", content))
