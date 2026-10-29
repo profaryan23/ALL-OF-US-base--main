@@ -116,8 +116,18 @@ through Render's proxy; do not reuse that wildcard on a directly exposed server.
 3. Sign in using `ADMIN_EMAIL` / `ADMIN_PASSWORD`, not the local demo credentials.
 4. In Studio > Inventory, create a product with a photo. Confirm it appears in
    the shop, redeploy once, and confirm its data and photo still exist.
-5. Test customer registration, bag, mock checkout, and the contact inbox.
-6. In Supabase Table Editor, verify application tables and test records exist.
+5. Open `/admin/checkout-settings` (also linked from Orders). Upload your real
+   payment QR and/or enter your WhatsApp, Instagram, Facebook and TikTok business
+   links. Blank options are hidden; ordering is disabled until an option is set.
+6. Add a product to the bag, check **Order total**, select **Proceed to order**,
+   enter delivery details, choose payment/contact, and select **Place order**.
+   The confirmation displays the QR for QR payments and configured contact links.
+7. Open `/admin/orders`, then **Full order page** for the saved order. Verify
+   customer details, variants, total and reduced stock. Mark payment **Paid**
+   only after independently checking the receipt. Legacy `#order-row-2` links
+   also open the order drawer when that order exists in the current list.
+8. Restart/redeploy and verify products, orders, checkout settings and uploaded
+   images remain. In Supabase Table Editor, verify the saved records exist.
 
 ## Important data and security notes
 
@@ -138,14 +148,73 @@ through Render's proxy; do not reuse that wildcard on a directly exposed server.
   Keep this deployment to one instance/worker. For a free Render instance or
   horizontal scaling, implement Supabase Storage uploads first; this code does
   not currently store photos in Supabase Storage.
-- `.env.example` documents settings; the app does not automatically load `.env`.
+- `.env.example` documents settings. Local development loads `.env`; production
+  uses the Render environment settings and does not load `.env`.
 - Keep `SECRET_KEY` stable across deployments; changing it invalidates sessions.
 - Startup creates tables and applies a few existing additive schema updates; it
   is not a general migration system. Back up and review future schema changes.
 - Restrict DB network access where practical, keep secrets server-side, and
   configure backups appropriate to your Supabase plan. Disk snapshots are not
   PostgreSQL backups.
-- Checkout is still a mock flow, not a live payment integration.
+- Checkout stores real orders, delivery details, item prices/variants, payment
+  choice and stock changes in PostgreSQL. Payment is **manually verified**;
+  there is no automated payment gateway or social-message delivery integration.
+  Delivery charges are confirmed separately before payment.
+- Production starts with no demo products. Inventory and checkout settings must
+  be entered in Studio. Pushing code does not copy a local SQLite database or
+  provision Supabase credentials; set `DATABASE_URL` and persistent image storage
+  before entering live data. Keep using the same database on every redeploy.
+
+## Inventory stock movements
+
+- Open `/admin/inventory#stock-movements` for stock-in, stock-out, current store
+  stock and total units received from vendors. Select dates, a product, and daily,
+  weekly or monthly grouping. Reports use UTC; weeks begin Monday. The selected
+  range is limited to 367 days, and history is paginated at 50 entries per page.
+- Use **Record stock-in / stock-out** for vendor receipts, customer returns,
+  vendor returns, damaged goods or other adjustments. Vendor receipts and returns
+  require a vendor name; use the reference field for an invoice or delivery note.
+- Vendor totals are gross received units, not net of vendor returns. Product
+  creation and existing stock are opening balances, not assumed vendor receipts.
+  History begins when this feature is installed; past deliveries cannot be
+  reconstructed from a stock balance alone. Entries are recorded at current time.
+- Orders, direct sales, agent allocations and product-editor stock changes create
+  entries automatically in the same database transaction. Sales of allocated
+  goods do not deduct store inventory a second time. Order cancellation alone
+  does not restock goods; record a customer return when goods physically return.
+- Startup creates `stock_movements` and establishes missing opening balances
+  without resetting existing stock. Repeated startup does not duplicate openings.
+  Removing an unreferenced product preserves its movement history and records
+  remaining units as stock-out. Keep the same PostgreSQL database on redeploy.
+
+## Profiles, agent workspace and RBACM
+
+- Use **Edit profile & picture** in the Studio sidebar, or `/account/profile`, to
+  edit name, phone, address, biography and profile photo. Email changes require
+  the current password. Photos share the persistent image storage configuration.
+- **Agents** is under **Studio Modules**. **Users & Roles** is now labeled
+  **RBACM**, at the unchanged `/admin/rbac` route with existing role permissions.
+  Create an agent login there using role Agent and the email of the existing
+  agent record, or create a new agent account. Startup links legacy accounts only
+  when exactly one matching unlinked agent email exists; ambiguous or missing
+  matches are not granted workspace access. Email changes retain the ID link.
+- Agents sign in through `/login` or team access and use `/agent/crm`,
+  `/agent/inventory` and `/agent/sales`. They see their own customers, sales,
+  actual selling prices and allocations. The catalog is read-only; agents cannot
+  change stock, allocate products, browse other agents' data or enter admin pages.
+- Agents record sales against their own remaining allocated units. These sales
+  appear in the administrator's existing CRM, Sales, Orders, Agents and Reports
+  data. They are recorded Completed; corrections and commission review remain
+  admin tasks. New agent-entered sales have zero commission until a separate
+  commission policy is applied; agents cannot choose their own commission rate.
+- RBACM's account-management section lets authorized admins edit agent login
+  email, name and phone, reset passwords and enable/disable access. Credential
+  resets revoke existing sessions. **Remove login access** disables the account
+  and invalidates its password while retaining sales, allocations and audit data;
+  it does not physically erase those business records. To restore access, enable
+  login and set a new password. Passwords are hashed and never displayed.
+- Startup adds profile fields, session version and the stable agent/account link
+  to existing tables. Back up production data before deployment.
 
 ## Common failures
 

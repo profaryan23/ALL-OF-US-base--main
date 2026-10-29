@@ -1,5 +1,5 @@
 {% extends "admin_base.html" %}
-{% block module_title %}RBAC{% endblock %}{% block module_heading %}Role access{% endblock %}
+{% block module_title %}RBACM{% endblock %}{% block module_heading %}RBACM{% endblock %}
 {% block module_content %}
 <section class="metrics-grid crm-metrics">
   <article class="metric metric-dark"><span>Active accounts</span><strong>{{ users|length }}</strong><small>Total database users</small></article>
@@ -70,7 +70,7 @@
       <h2>Current users</h2>
     </div>
   </div>
-  
+
   <!-- Role Filter Bar: Separates Admins, Agents, Customers -->
   <div class="user-role-filter-bar">
     <button type="button" class="role-filter-btn active" data-role-filter="all">All Accounts ({{ users|length }})</button>
@@ -128,6 +128,26 @@
     </div>
     {% endfor %}
   </div>
+</section>
+<section class="admin-section"><h2>Manage account details & login access</h2>
+  <p>Reset credentials or remove login access. Removal preserves sales, allocations and audit history. Existing sessions are revoked when access or credentials change.</p>
+  {% for user in users if user_can_manage_role(current_user, user.role) %}
+  <details><summary>{{ user.first_name }} {{ user.last_name }} — {{ user.email }} · {{ user.role }} · {{ 'Active' if user.is_active else 'Access removed' }}</summary>
+    {% if user.profile_image %}<img src="{{ url_for('static', filename=user.profile_image) }}" alt="{{ user.first_name }} profile" width="80" height="80" style="border-radius:50%;object-fit:cover">{% endif %}
+    <p>Address: {{ user.address or 'Not provided' }} · Profile details: {{ user.bio or 'Not provided' }}</p>
+    <form method="post" action="{{ url_for('update_user_account', user_id=user.id) }}" class="product-editor-grid">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>First name<input name="first_name" maxlength="80" value="{{ user.first_name }}" required></label>
+      <label>Last name<input name="last_name" maxlength="80" value="{{ user.last_name }}" required></label>
+      <label>Email<input name="email" type="email" maxlength="255" value="{{ user.email }}" required></label>
+      <label>Phone<input name="phone" maxlength="40" value="{{ user.phone }}"></label>
+      <label>New password (leave blank to keep)<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password"></label>
+      <label><input name="is_active" type="checkbox" {% if user.is_active %}checked{% endif %}> Login enabled</label>
+      <button class="save-button">Save account</button>
+    </form>
+    <form method="post" action="{{ url_for('delete_user_account', user_id=user.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="save-button">Remove login access (preserve history)</button></form>
+  </details>
+  {% endfor %}
 </section>
 
 <script>

@@ -8,6 +8,7 @@
     <div>
       <p class="eyebrow">Fulfillment and status</p>
       <h2>All orders</h2>
+      <a href="{{ url_for('admin_checkout_settings') }}">Payment QR & communication settings ↗</a>
       <p class="report-note">Click any Order ID (e.g., <code>#0003</code>) to open the deep fulfillment drawer with line-item variants, shipping details, and vendor production tracking.</p>
     </div>
     <form method="get" action="{{ url_for('admin_orders') }}" class="period-filter">
@@ -49,12 +50,15 @@
             <button type="button" class="order-drawer-trigger" data-order-id="{{ order.id }}" title="Open order deep details drawer">
               #{{ '%04d'|format(order.id) }} <span class="trigger-icon">↗</span>
             </button>
+            <a href="{{ url_for('admin_order_detail', order_id=order.id) }}">Full order page ↗</a>
+            <small>{{ order.payment_method }} · {{ order.payment_status }}</small>
             {% if order.vendor_batch_id %}
               <small class="batch-badge">Vendor: {{ order.vendor_batch_id }}</small>
             {% endif %}
           </td>
           <td>
-            {{ order.user.first_name }} {{ order.user.last_name }}
+            {{ order.customer_name or (order.user.first_name ~ ' ' ~ order.user.last_name) }}
+            {% if order.customer_phone %}<small>{{ order.customer_phone }}</small>{% endif %}
             <small>{{ order.user.email }}</small>
             <small>Agent: {{ order.agent.name if order.agent else 'Direct sale' }}</small>
           </td>
@@ -145,7 +149,7 @@
 {% for order in orders %}
 <aside id="order-drawer-{{ order.id }}" class="order-slide-drawer" aria-hidden="true" style="display: none;">
   <div class="drawer-content">
-    
+
     <!-- Drawer Header -->
     <header class="drawer-header">
       <div>
@@ -160,7 +164,7 @@
     </header>
 
     <div class="drawer-body">
-      
+
       <!-- 1. Audit Trail Timeline -->
       <section class="drawer-box">
         <h4 class="box-title">Audit Trail & Status Progression</h4>
@@ -300,7 +304,7 @@
         </div>
         <form method="post" action="{{ url_for('update_order_fulfillment', order_id=order.id) }}" class="fulfillment-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          
+
           <div class="drawer-fields-grid">
             <label>
               <span>Order Status</span>

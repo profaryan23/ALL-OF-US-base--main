@@ -1,0 +1,29 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Order #{{ '%04d'|format(order.id) }}{% endblock %}
+{% block module_heading %}Order details{% endblock %}
+{% block module_content %}
+<section class="admin-section">
+  <a href="{{ url_for('admin_orders') }}">← All orders</a>
+  <h2>Order #{{ '%04d'|format(order.id) }}</h2>
+  <p>{{ order.created_at.strftime('%B %d, %Y %H:%M UTC') }} · {{ order.channel }} · {{ order.status }}</p>
+  <h3>Customer & delivery</h3>
+  <p>{{ order.customer_name or (order.user.first_name ~ ' ' ~ order.user.last_name) }} · {{ order.customer_phone or order.user.phone }}</p>
+  <p>{{ order.shipping_address or 'No delivery address recorded' }}</p><p>{{ order.customer_notes }}</p>
+  <h3>Line items</h3>
+  {% for item in order.items %}<p>{{ item.quantity }} × {{ item.product.name }}{% if item.size_variation %} · Size {{ item.size_variation }}{% endif %}{% if item.color_variation %} · Color {{ item.color_variation }}{% endif %} — Rs {{ '%.2f'|format(item.price_at_purchase * item.quantity) }}</p>{% endfor %}
+  <h3>Order total: Rs {{ '%.2f'|format(order.total_amount) }}</h3>
+  <p>Payment / contact option: {{ order.payment_method or 'Not recorded' }}</p>
+  <form method="post" action="{{ url_for('update_order_payment', order_id=order.id) }}" class="checkout-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Payment verification<select name="payment_status">{% for status in ['Awaiting verification', 'Paid', 'Rejected', 'Refunded'] %}<option {% if order.payment_status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></label>
+    <label>Payment reference<input name="gateway_ref" maxlength="100" value="{{ order.gateway_ref }}"></label>
+    <button class="save-button">Save payment verification</button>
+  </form>
+  <form method="post" action="{{ url_for('update_order', order_id=order.id) }}" class="status-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Order status<select name="status">{% for status in ['Pending', 'Processing', 'Completed', 'Cancelled'] %}<option {% if order.status == status %}selected{% endif %}>{{ status }}</option>{% endfor %}</select></label><button class="save-button">Save order status</button>
+  </form>
+  <p>Carrier: {{ order.carrier or 'Not assigned' }} · Tracking: {{ order.tracking_number or 'Not assigned' }} · Vendor batch: {{ order.vendor_batch_id or 'Not assigned' }}</p>
+  <a href="{{ url_for('admin_orders') }}#order-row-{{ order.id }}">Open fulfillment editor ↗</a>
+</section>
+{% endblock %}

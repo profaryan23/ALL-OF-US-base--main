@@ -70,6 +70,9 @@ class AgentAndVariantTests(unittest.TestCase):
             self.assertEqual(item.commission_amount, Decimal('190.00'))
             self.assertEqual(item.color_variation, 'Red')
             self.assertEqual(db.get(main.Product, self.product_id).stock_quantity, 18)
+            movement = db.query(main.StockMovement).filter_by(product_id=self.product_id, reason='Recorded sale').one()
+            self.assertEqual(movement.quantity, -2)
+            self.assertEqual(movement.reference, f'Order #{order.id:04d}')
         for endpoint in ('agents', 'sales', 'orders', 'crm', 'reports'):
             response = self.client.get(f'/admin/{endpoint}?agent_id={self.agent_id}')
             self.assertEqual(response.status_code, 200, endpoint)
@@ -78,7 +81,7 @@ class AgentAndVariantTests(unittest.TestCase):
         self.assertIn('Agent Commission (Rs)', response.text)
         self.assertIn('190.00', response.text)
         self.assertIn('Red', response.text)
-        direct = self.client.get('/admin/sales?agent_id=direct')
+        direct = self.client.get('/admin/sales/export?agent_id=direct')
         self.assertNotIn('1900.00', direct.text)
 
     def test_allocation_and_sale_do_not_double_deduct(self):
@@ -94,6 +97,10 @@ class AgentAndVariantTests(unittest.TestCase):
         with main.SessionLocal() as db:
             self.assertEqual(db.get(main.AgentAllocation, allocation_id).remaining, 3)
             self.assertEqual(db.get(main.Product, self.product_id).stock_quantity, 15)
+            movements = db.query(main.StockMovement).filter_by(product_id=self.product_id).all()
+            self.assertEqual(sum(row.quantity for row in movements), 15)
+            self.assertEqual([row.quantity for row in movements if row.reason == 'Agent allocation'], [-5])
+            self.assertFalse(any(row.reason == 'Recorded sale' for row in movements))
 
     def test_invalid_sale_does_not_change_stock(self):
         for extra in ({'quantity': 100}, {'commission_percent': 'NaN'}, {'company_discount_percent': '101'}, {'color_variation': 'Green'}, {'price': 'Infinity'}):
@@ -115,11 +122,19 @@ class AgentAndVariantTests(unittest.TestCase):
         self.assertIn('Color: Red', cart.text)
         self.assertIn('Color: Blue', cart.text)
         self.assertIn('red.png', cart.text)
-        self.post('/checkout')
+        with main.SessionLocal() as db:
+            settings = main.checkout_settings(db)
+            settings.whatsapp = 'https://wa.me/9779812345678'
+            db.add(settings)
+            db.commit()
+        self.post('/checkout', name='Variant Buyer', phone='9812345678', address='Kathmandu', payment_method='WhatsApp')
         with main.SessionLocal() as db:
             order = db.query(main.Order).order_by(main.Order.id.desc()).first()
             self.assertEqual({i.color_variation for i in order.items}, {'Red', 'Blue'})
             self.assertEqual(db.get(main.Product, self.product_id).stock_quantity, 18)
+            movements = db.query(main.StockMovement).filter_by(product_id=self.product_id).all()
+            self.assertEqual(sum(row.quantity for row in movements), 18)
+            self.assertEqual(sum(row.quantity for row in movements if row.reason == 'Customer order'), -2)
         response = self.post(f'/cart/add/{self.product_id}', size_variation='M', color_variation='Green')
         self.assertEqual(response.status_code, 400)
 

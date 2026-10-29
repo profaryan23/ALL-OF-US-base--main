@@ -27,13 +27,31 @@ import main
 class DeploymentTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        cls.directory = tempfile.TemporaryDirectory()
+        cls.engine = create_engine("sqlite:///:memory:", poolclass=StaticPool,
+                                   connect_args={"check_same_thread": False})
+        cls.patches = [
+            patch.dict(os.environ, {"ADMIN_EMAIL": "deploy-test@example.com",
+                                    "ADMIN_PASSWORD": "test-admin-password-unique"}),
+            patch.object(main, "engine", cls.engine),
+            patch.object(main, "SessionLocal", sessionmaker(bind=cls.engine, expire_on_commit=False)),
+            patch.object(main, "PRODUCT_IMAGE_DIR", Path(cls.directory.name) / "images"),
+            patch.object(main, "ADMIN_EMAIL", "deploy-test@example.com"),
+            patch.object(main, "ADMIN_PASSWORD", "test-admin-password-unique"),
+        ]
+        for item in cls.patches:
+            item.start()
         cls.client_context = TestClient(main.app)
         cls.client = cls.client_context.__enter__()
 
     @classmethod
     def tearDownClass(cls):
         cls.client_context.__exit__(None, None, None)
-        main.engine.dispose()
+        cls.engine.dispose()
+        for item in reversed(cls.patches):
+            item.stop()
+        main.product_image_files.directory = str(main.PRODUCT_IMAGE_DIR)
+        cls.directory.cleanup()
         _temporary_directory.cleanup()
 
     def test_health_check(self):
@@ -140,7 +158,7 @@ class DeploymentTests(unittest.TestCase):
                         main.seed_database()
                     with sessions() as db:
                         self.assertEqual(db.query(main.User).count(), 0)
-                        self.assertGreater(db.query(main.Product).count(), 0)
+                        self.assertEqual(db.query(main.Product).count(), 0)  # No demo inventory in production.
                         self.assertGreater(db.query(main.PageContent).count(), 0)
                     self.assertIn("Skipping admin seeding", logs.output[0])
                 finally:

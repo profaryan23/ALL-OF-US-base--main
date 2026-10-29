@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 from typing import Annotated
-from urllib.parse import quote, unquote, urlencode
+from urllib.parse import quote, unquote, urlencode, urlparse
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -291,6 +291,11 @@ def migrate_catalog_schema():
             "size_variation": "VARCHAR(80) NOT NULL DEFAULT ''",
         },
         "orders": {
+            "payment_method": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "payment_status": "VARCHAR(40) NOT NULL DEFAULT 'Awaiting verification'",
+            "customer_name": "VARCHAR(160) NOT NULL DEFAULT ''",
+            "customer_phone": "VARCHAR(40) NOT NULL DEFAULT ''",
+            "customer_notes": "TEXT NOT NULL DEFAULT ''",
             "agent_id": "INTEGER REFERENCES agents(id)",
             "channel": "VARCHAR(40) NOT NULL DEFAULT 'Online delivery'",
             "carrier": "VARCHAR(100) NOT NULL DEFAULT ''",
@@ -346,6 +351,9 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(30), default="customer")
     profile_image: Mapped[str] = mapped_column(String(255), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    address: Mapped[str] = mapped_column(String(300), default="")
+    bio: Mapped[str] = mapped_column(Text, default="")
+    session_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     orders: Mapped[list["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -413,9 +421,49 @@ class Product(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class StockMovement(Base):
+    __tablename__ = "stock_movements"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id"), nullable=True, index=True)
+    product_name: Mapped[str] = mapped_column(String(140))
+    quantity: Mapped[int] = mapped_column(Integer)  # Signed: positive in, negative out.
+    balance_after: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(40))
+    vendor: Mapped[str] = mapped_column(String(140), default="")
+    reference: Mapped[str] = mapped_column(String(140), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    actor_name: Mapped[str] = mapped_column(String(255), default="System")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+def record_stock_movement(db, product, quantity, reason, actor=None, vendor="", reference="", notes=""):
+    """Record a change after its balance is updated, in the same transaction."""
+    if quantity:
+        db.add(StockMovement(product_id=product.id, product_name=product.name,
+                             quantity=quantity, balance_after=product.stock_quantity, reason=reason,
+                             actor_name=actor.email if actor else "System", vendor=vendor,
+                             reference=reference[:140], notes=notes))
+
+
+def ensure_stock_opening(db, product):
+    # Never invent historical receipts: establish the balance when tracking begins.
+    exists = db.query(StockMovement.id).filter_by(product_id=product.id).first()
+    if not exists and not any(isinstance(item, StockMovement) and item.product_id == product.id for item in db.new):
+        db.add(StockMovement(product_id=product.id, product_name=product.name,
+                             quantity=product.stock_quantity, balance_after=product.stock_quantity,
+                             reason="Opening balance", notes="Stock on hand when movement tracking began."))
+
+
+def initialize_stock_movements():
+    with SessionLocal.begin() as db:
+        for product in db.query(Product).order_by(Product.id).with_for_update().all():
+            ensure_stock_opening(db, product)
+
+
 class Agent(Base):
     __tablename__ = "agents"
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, unique=True)
     name: Mapped[str] = mapped_column(String(140))
     phone: Mapped[str] = mapped_column(String(40), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
@@ -440,6 +488,17 @@ class AgentAllocation(Base):
     product: Mapped[Product] = relationship()
 
 
+class CheckoutSettings(Base):
+    __tablename__ = "checkout_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    qr_photo_path: Mapped[str] = mapped_column(String(255), default="")
+    payment_instructions: Mapped[str] = mapped_column(Text, default="")
+    whatsapp: Mapped[str] = mapped_column(String(255), default="")
+    instagram: Mapped[str] = mapped_column(String(255), default="")
+    facebook: Mapped[str] = mapped_column(String(255), default="")
+    tiktok: Mapped[str] = mapped_column(String(255), default="")
+
+
 class Order(Base):
     __tablename__ = "orders"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -447,6 +506,11 @@ class Order(Base):
     agent_id: Mapped[int | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
     agent: Mapped[Agent | None] = relationship()
     total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    payment_method: Mapped[str] = mapped_column(String(40), default="")
+    payment_status: Mapped[str] = mapped_column(String(40), default="Awaiting verification")
+    customer_name: Mapped[str] = mapped_column(String(160), default="")
+    customer_phone: Mapped[str] = mapped_column(String(40), default="")
+    customer_notes: Mapped[str] = mapped_column(Text, default="")
     status: Mapped[str] = mapped_column(String(24), default="Pending")
     channel: Mapped[str] = mapped_column(String(40), default="Online delivery")
     carrier: Mapped[str] = mapped_column(String(100), default="")
@@ -642,7 +706,6 @@ def track_event(db: Session, request: Request, event_type: str, product_id: int 
 
 
 def seed_database():
-    resolve_admin_credentials_from_environment()
     admin_credentials_valid = bool(ADMIN_EMAIL and ADMIN_PASSWORD)
     if IS_PRODUCTION:
         admin_credentials_valid = admin_credentials_valid and ADMIN_PASSWORD != "admin123" and len(ADMIN_PASSWORD) >= 16
@@ -654,29 +717,11 @@ def seed_database():
     with SessionLocal.begin() as db:
         if admin_credentials_valid:
             configured_admin = db.query(User).filter_by(email=ADMIN_EMAIL).first()
-            existing_admins = db.query(User).filter_by(role="admin").all()
             if configured_admin is None:
-                if existing_admins:
-                    primary_admin = existing_admins[0]
-                    primary_admin.first_name = "All of Us"
-                    primary_admin.last_name = "Admin"
-                    primary_admin.email = ADMIN_EMAIL
-                    primary_admin.password_hash = generate_password_hash(ADMIN_PASSWORD)
-                    primary_admin.role = "admin"
-                    for duplicate in existing_admins[1:]:
-                        db.delete(duplicate)
-                else:
-                    db.add(User(
-                        first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
-                        password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
-                    ))
-            else:
-                configured_admin.first_name = "All of Us"
-                configured_admin.last_name = "Admin"
-                configured_admin.password_hash = generate_password_hash(ADMIN_PASSWORD)
-                configured_admin.role = "admin"
-                for duplicate in [admin for admin in existing_admins if admin.id != configured_admin.id]:
-                    db.delete(duplicate)
+                db.add(User(
+                    first_name="All of Us", last_name="Admin", email=ADMIN_EMAIL,
+                    password_hash=generate_password_hash(ADMIN_PASSWORD), role="admin",
+                ))
         existing_account_codes = {row[0] for row in db.query(Account.code).all()}
         for account in [
             Account(code="1000", name="Cash and Cash Equivalents", type="ASSET", normal_balance="DEBIT"),
@@ -691,7 +736,7 @@ def seed_database():
             if account.code not in existing_account_codes:
                 db.add(account)
                 existing_account_codes.add(account.code)
-        if db.query(Product).count() == 0:
+        if not IS_PRODUCTION and db.query(Product).count() == 0:
             db.add_all([
                 Product(name="Everyday Tote", description="A sturdy carryall made for everyday errands.", price=Decimal("28.00"), stock_quantity=18),
                 Product(name="Sunday Ceramic Set", description="Hand-finished mugs for slow mornings.", price=Decimal("42.00"), stock_quantity=12),
@@ -744,9 +789,13 @@ def migrate_accounting_schema():
         "users": {
             "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
             "is_active": bool_def,
+            "address": "VARCHAR(300) NOT NULL DEFAULT ''",
+            "bio": "TEXT NOT NULL DEFAULT ''",
+            "session_version": "INTEGER NOT NULL DEFAULT 0",
         },
         "agents": {
             "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
+            "user_id": "INTEGER REFERENCES users(id)",
         },
         "accounts": {
             "code": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -889,7 +938,10 @@ async def lifespan(_app: FastAPI):
     migrate_catalog_schema()
     migrate_page_content()
     migrate_accounting_schema()
+    resolve_admin_credentials_from_environment()
     seed_database()
+    link_agent_accounts()
+    initialize_stock_movements()
     yield
 
 
@@ -911,6 +963,8 @@ def template_context(request: Request):
     admin_order_notifications = []
     with SessionLocal() as db:
         user = db.get(User, user_id) if user_id else None
+        if user and (not user.is_active or request.session.get("session_version", 0) != user.session_version):
+            user = None
         page_contents = {
             item.page_key: item
             for item in db.query(PageContent).filter(
@@ -937,7 +991,7 @@ def template_context(request: Request):
                     "created_at": o.created_at,
                     "items_count": sum(it.quantity for it in o.items),
                 })
-        agents_list = db.query(Agent).order_by(Agent.name).all()
+        agents_list = db.query(Agent).order_by(Agent.name).all() if user and user.is_admin_like else []
     cart = request.session.get("cart", {})
     message = request.session.pop("flash", None)
 
@@ -964,6 +1018,7 @@ def template_context(request: Request):
 
     return {
         "current_user": user,
+        "user_can_manage_role": user_can_manage_role,
         "site_content": page_contents.get("home"),
         "about_content": page_contents.get("about"),
         "contact_content": page_contents.get("contact"),
@@ -974,6 +1029,7 @@ def template_context(request: Request):
         "url_for": template_url_for,
         "size_choices": SIZE_CHOICES,
         "product_colors": product_colors,
+        "available_payment_methods": available_payment_methods,
         "agents": agents_list,
         "selected_agent": request.query_params.get("agent_id", ""),
         "admin_pending_orders_count": admin_pending_orders_count,
@@ -992,7 +1048,7 @@ ADMIN_MODULES = {
     "overview": ("Overview", "admin_dashboard"),
     "content": ("Content", "admin_content"),
     "crm": ("CRM", "admin_crm"),
-    "rbac": ("RBAC", "admin_rbac"),
+    "rbac": ("RBACM", "admin_rbac"),
     "users": ("Users", "admin_users"),
     "inventory": ("Inventory", "admin_inventory"),
     "agents": ("Agents", "admin_agents"),
@@ -1063,7 +1119,10 @@ def get_current_user(request: Request, db: Annotated[Session, Depends(get_db)]):
     user_id = request.session.get("user_id")
     admin_pending_orders_count = 0
     admin_order_notifications = []
-    return db.get(User, user_id) if user_id else None
+    user = db.get(User, user_id) if user_id else None
+    if user and user.is_active and request.session.get("session_version", 0) == user.session_version:
+        return user
+    return None
 
 
 def require_user(user: Annotated[User | None, Depends(get_current_user)]):
@@ -1095,7 +1154,7 @@ def user_has_any_role(user: User | None, *roles: str) -> bool:
 
 
 def user_is_admin(user: User | None) -> bool:
-    return bool(user) and user.role in {"admin", "super_admin", "developer"}
+    return bool(user) and user.is_active and user.role in {"admin", "super_admin", "developer"}
 
 
 def user_can_manage_role(user: User | None, target_role: str | None) -> bool:
@@ -1123,6 +1182,155 @@ async def verify_csrf(request: Request):
     expected = request.session.get("csrf_token", "")
     if not supplied or not expected or not hmac.compare_digest(supplied, expected):
         raise HTTPException(status_code=400, detail="Invalid form token. Refresh and try again.")
+
+
+def valid_account_email(email):
+    return len(email) <= 255 and bool(re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email))
+
+
+def linked_agent(db, user):
+    return db.query(Agent).filter_by(user_id=user.id).first()
+
+
+def link_agent_accounts():
+    """Upgrade legacy email-based links once; subsequent email edits keep the ID link."""
+    with SessionLocal.begin() as db:
+        for user in db.query(User).filter_by(role="agent").all():
+            if linked_agent(db, user):
+                continue
+            candidates = db.query(Agent).filter(func.lower(Agent.email) == user.email.lower(), Agent.user_id.is_(None)).all()
+            if len(candidates) == 1:
+                candidates[0].user_id = user.id
+
+
+def require_agent(user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    agent = linked_agent(db, user) if user.role == "agent" else None
+    if not agent or not agent.is_active:
+        raise HTTPException(403, "An active linked agent account is required.")
+    return agent
+
+
+@app.get("/agent", response_class=HTMLResponse)
+def agent_home(agent: Annotated[Agent, Depends(require_agent)]):
+    return RedirectResponse("/agent/crm", status_code=303)
+
+
+@app.get("/agent/{module}", name="agent_workspace", response_class=HTMLResponse)
+def agent_workspace(module: str, request: Request, agent: Annotated[Agent, Depends(require_agent)], db: Annotated[Session, Depends(get_db)]):
+    if module not in {"crm", "inventory", "sales"}:
+        raise HTTPException(404, "Module not found.")
+    orders = db.query(Order).filter_by(agent_id=agent.id).order_by(Order.created_at.desc()).all()
+    allocations = db.query(AgentAllocation).filter_by(agent_id=agent.id).order_by(AgentAllocation.id.desc()).all()
+    customer_rows = {}
+    for order in orders:
+        row = customer_rows.setdefault(order.user_id, dict(customer=order.user, orders=[]))
+        row["orders"].append(order)
+    return page(request, "agent_workspace.html", agent=agent, agent_module=module,
+                agent_orders=orders, allocations=allocations, customer_rows=list(customer_rows.values()),
+                products=db.query(Product).filter_by(is_active=True).order_by(Product.name).all())
+
+
+@app.post("/agent/sales/record", name="agent_record_sale", dependencies=[Depends(verify_csrf)])
+async def agent_record_sale(request: Request, agent: Annotated[Agent, Depends(require_agent)],
+                            user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    try:
+        allocation_id = int(form.get("allocation_id", "0"))
+        quantity = int(form.get("quantity", "0"))
+        price = money(form.get("price", ""))
+    except (ValueError, TypeError, InvalidOperation):
+        raise HTTPException(400, "Enter a valid allocation, quantity and selling price.")
+    # Ownership is part of the query, never supplied by the browser.
+    allocation = db.query(AgentAllocation).filter_by(id=allocation_id, agent_id=agent.id).with_for_update().first()
+    if not allocation:
+        raise HTTPException(404, "Allocation not found.")
+    name = str(form.get("name", "")).strip()
+    phone = str(form.get("phone", "")).strip()
+    email = str(form.get("email", "")).strip().lower()
+    address = str(form.get("address", "")).strip()
+    if (not 1 <= quantity <= allocation.remaining or not price.is_finite() or not 0 < price <= Decimal("99999999.99")
+            or price * quantity > Decimal("99999999.99") or not name or len(name) > 160
+            or not 7 <= len(re.sub(r"\D", "", phone)) <= 15 or len(phone) > 40
+            or len(address) > 300 or (email and not valid_account_email(email))):
+        raise HTTPException(400, "Check available stock, price and customer contact details.")
+    customer = db.query(User).filter(func.lower(User.email) == email).first() if email else None
+    # Do not attach sales to staff accounts or modify another agent's CRM records.
+    if customer and customer.role != "customer":
+        raise HTTPException(400, "Use a customer email, not a staff login.")
+    if not customer:
+        parts = name.split(maxsplit=1)
+        customer = User(first_name=parts[0][:80], last_name=(parts[1] if len(parts) > 1 else "")[:80],
+                        email=email or f"walkin.{secrets.token_hex(16)}@allofus.store", phone=phone,
+                        address=address, role="customer", password_hash=generate_password_hash(secrets.token_urlsafe(32)))
+        db.add(customer)
+        db.flush()
+    order = Order(user_id=customer.id, agent_id=agent.id, total_amount=price * quantity, status="Completed",
+                  channel="Agent sale", customer_name=name, customer_phone=phone, shipping_address=address)
+    order.items.append(OrderItem(product_id=allocation.product_id, quantity=quantity, price_at_purchase=price,
+                                 allocation_id=allocation.id, size_variation=allocation.size_variation,
+                                 color_variation=allocation.color_variation, agent_unit_cost=allocation.unit_cost,
+                                 company_discount_percent=allocation.company_discount_percent))
+    allocation.remaining -= quantity
+    db.add(order)
+    db.flush()
+    create_activity_log(db, actor=user, module="sales", action="agent_sale", entity_type="order", entity_id=order.id,
+                        details=f"Agent {agent.name} sold {quantity} units for Rs {order.total_amount:.2f}.")
+    db.commit()
+    request.session["flash"] = ["success", "Sale saved. Customer and remaining allocation updated."]
+    return RedirectResponse("/agent/sales", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/update", name="update_user_account", dependencies=[Depends(verify_csrf)])
+async def update_user_account(user_id: int, request: Request, admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "Account not found.")
+    if not user_can_manage_role(admin, target.role):
+        raise HTTPException(403, "You cannot manage this account type.")
+    form = await request.form()
+    first, last, email, phone = (str(form.get(field, getattr(target, field))).strip() for field in ("first_name", "last_name", "email", "phone"))
+    email = email.lower()
+    password = str(form.get("password", ""))
+    if (not first or not last or len(first) > 80 or len(last) > 80 or len(phone) > 40
+            or not valid_account_email(email) or (password and not 8 <= len(password) <= 128)):
+        raise HTTPException(400, "Enter valid account details and a password of 8–128 characters.")
+    if db.query(User).filter(func.lower(User.email) == email, User.id != target.id).first():
+        raise HTTPException(409, "An account with that email already exists.")
+    agent = linked_agent(db, target) if target.role == "agent" else None
+    previous_email = target.email
+    target.first_name, target.last_name, target.email, target.phone = first, last, email, phone
+    active = form.get("is_active") == "on"
+    if password or active != target.is_active or email != previous_email:
+        target.session_version += 1
+    if password:
+        target.password_hash = generate_password_hash(password)
+    target.is_active = active
+    if agent:
+        agent.name, agent.email, agent.phone, agent.is_active = f"{first} {last}"[:140], email, phone, active
+    create_activity_log(db, actor=admin, module="users", action="credentials_updated", entity_type="user",
+                        entity_id=target.id, details="Updated account details/access; password contents are never logged.")
+    db.commit()
+    return RedirectResponse("/admin/rbac", status_code=303)
+
+
+@app.post("/admin/users/{user_id}/delete", name="delete_user_account", dependencies=[Depends(verify_csrf)])
+async def delete_user_account(user_id: int, request: Request, admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    target = db.get(User, user_id)
+    if not target:
+        raise HTTPException(404, "Account not found.")
+    if not user_can_manage_role(admin, target.role) or target.id == admin.id:
+        raise HTTPException(403, "You cannot remove this account.")
+    target.is_active = False
+    target.session_version += 1
+    target.password_hash = generate_password_hash(secrets.token_urlsafe(32))
+    agent = linked_agent(db, target) if target.role == "agent" else None
+    if agent:
+        agent.is_active = False
+    create_activity_log(db, actor=admin, module="users", action="access_deleted", entity_type="user",
+                        entity_id=target.id, details="Removed login access; retained historical sales and allocations.")
+    db.commit()
+    request.session["flash"] = ["success", "Login access removed. Sales and stock history preserved."]
+    return RedirectResponse("/admin/rbac", status_code=303)
 
 
 def page(request: Request, template: str, **context):
@@ -1293,14 +1501,15 @@ async def login_submit(request: Request, db: Annotated[Session, Depends(get_db)]
     form = await request.form()
     email = str(form.get("email", "")).strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
-    if user and check_password_hash(user.password_hash, str(form.get("password", ""))):
+    if user and user.is_active and check_password_hash(user.password_hash, str(form.get("password", ""))):
         destination = request.query_params.get("next", "")
         if not destination or destination == "/":
-            destination = "/admin" if user.is_admin_like else "/"
+            destination = "/admin" if user.is_admin_like else ("/agent/crm" if user.role == "agent" else "/")
         elif not destination.startswith("/") or destination.startswith("//"):
             destination = "/"
         request.session.clear()
         request.session["user_id"] = user.id
+        request.session["session_version"] = user.session_version
         return RedirectResponse(destination, status_code=303)
     return page(request, "auth.html", mode="login", error="Email or password was not recognized.", form_data=dict(form))
 
@@ -1315,9 +1524,12 @@ async def admin_login_submit(request: Request, db: Annotated[Session, Depends(ge
     form = await request.form()
     email = str(form.get("email", "")).strip().lower()
     user = db.query(User).filter(func.lower(User.email) == email).first()
-    if user and user_is_admin(user) and check_password_hash(user.password_hash, str(form.get("password", ""))):
+    if user and user.is_active and (user_is_admin(user) or user.role == "agent") and check_password_hash(user.password_hash, str(form.get("password", ""))):
         request.session.clear()
         request.session["user_id"] = user.id
+        request.session["session_version"] = user.session_version
+        if user.role == "agent":
+            return RedirectResponse("/agent/crm", status_code=303)
         return safe_redirect(request, "admin_dashboard")
     return page(request, "auth.html", mode="admin", error="Admin credentials were not recognized.", form_data=dict(form))
 
@@ -1333,16 +1545,36 @@ async def account_profile_update(request: Request, user: Annotated[User, Depends
     first_name = str(form.get("first_name", user.first_name)).strip()
     last_name = str(form.get("last_name", user.last_name)).strip()
     phone = str(form.get("phone", user.phone)).strip()
-    if not first_name or not last_name:
-        raise HTTPException(status_code=400, detail="First and last names are required.")
+    email = str(form.get("email", user.email)).strip().lower()
+    address = str(form.get("address", user.address)).strip()
+    bio = str(form.get("bio", user.bio)).strip()
+    if (not first_name or not last_name or len(first_name) > 80 or len(last_name) > 80
+            or len(phone) > 40 or len(address) > 300 or len(bio) > 1000 or not valid_account_email(email)):
+        raise HTTPException(400, "Enter valid profile details within the field limits.")
+    if db.query(User).filter(func.lower(User.email) == email, User.id != user.id).first():
+        raise HTTPException(409, "An account with that email already exists.")
+    if email != user.email and not check_password_hash(user.password_hash, str(form.get("current_password", ""))):
+        raise HTTPException(400, "Enter your current password to change your email.")
+    agent = linked_agent(db, user) if user.role == "agent" else None
     file = form.get("profile_image")
     if file and getattr(file, "filename", ""):
-        image = await read_product_image({"photo": file})
+        try:
+            image = await read_product_image({"photo": file})
+        except ValueError as error:
+            raise HTTPException(400, str(error))
         if image:
             user.profile_image = save_product_image(image)
+    elif form.get("remove_photo"):
+        user.profile_image = ""
     user.first_name = first_name
     user.last_name = last_name
     user.phone = phone
+    user.email, user.address, user.bio = email, address, bio
+    if agent:
+        agent.name = f"{first_name} {last_name}"[:140]
+        agent.email, agent.phone, agent.profile_image = email, phone, user.profile_image
+    create_activity_log(db, actor=user, module="users", action="profile_updated", entity_type="user",
+                        entity_id=user.id, details="Updated personal profile.")
     db.commit()
     request.session["flash"] = ["success", "Your profile was updated."]
     return safe_redirect(request, "account_profile")
@@ -1391,142 +1623,68 @@ async def add_to_cart(product_id: int, request: Request, db: Annotated[Session, 
     return RedirectResponse(referrer if referrer and referrer.startswith(str(request.base_url)) else "/", status_code=303)
 
 
+def checkout_settings(db: Session):
+    return db.get(CheckoutSettings, 1) or CheckoutSettings(
+        id=1, qr_photo_path="", payment_instructions="", whatsapp="",
+        instagram="", facebook="", tiktok="",
+    )
+
+
+def validate_variant(product, size, color):
+    sizes = product_sizes(product)
+    colors = [c["name"] for c in product_colors(product)]
+    if (sizes and size not in sizes) or (not sizes and size):
+        raise HTTPException(400, "Choose an available size.")
+    if (colors and color not in colors) or (not colors and color):
+        raise HTTPException(400, "Choose an available color.")
+
+
+async def read_cart_json(request):
+    try:
+        data = await request.json()
+    except ValueError:
+        raise HTTPException(400, "Invalid request data.")
+    if not isinstance(data, dict):
+        raise HTTPException(400, "Invalid request data.")
+    supplied = request.headers.get("X-CSRF-Token", "")
+    expected = request.session.get("csrf_token", "")
+    if not supplied or not expected or not hmac.compare_digest(supplied, expected):
+        raise HTTPException(400, "Refresh the page and try again.")
+    return data
+
+
 @app.post("/api/cart/add")
 async def api_cart_add(request: Request, db: Annotated[Session, Depends(get_db)]):
-    data = await request.json()
-    product_name = str(data.get("product", "")).strip()
-    color = str(data.get("color", "")).strip()
-    size = str(data.get("size", "")).strip()
+    data = await read_cart_json(request)
     try:
-        qty = int(data.get("quantity", 1))
+        product_id = int(data.get("product_id", 0))
+        quantity = int(data.get("quantity", 1))
+        if isinstance(data.get("quantity"), bool) or str(quantity) != str(data.get("quantity", 1)):
+            raise ValueError
     except (ValueError, TypeError):
-        qty = 1
-    if qty < 1:
-        qty = 1
-
-    product = db.query(Product).filter_by(name=product_name, is_active=True).first()
-    if not product:
-        product = db.query(Product).filter_by(is_active=True).first()
-
-    if product:
-        cart = request.session.setdefault("cart", {})
-        line_key = cart_line_key(product.id, size, color)
-        cart[line_key] = int(cart.get(line_key, 0)) + qty
-        request.session["cart"] = cart
-
-    total_count = sum(request.session.get("cart", {}).values())
-    return {"success": True, "cart_count": total_count}
+        raise HTTPException(400, "Enter a whole-number quantity.")
+    product = db.get(Product, product_id)
+    if not product or not product.is_active:
+        raise HTTPException(404, "Product not found.")
+    size, color = str(data.get("size", "")), str(data.get("color", ""))
+    validate_variant(product, size, color)
+    cart = dict(request.session.get("cart", {}))
+    already_added = sum(int(q) for key, q in cart.items() if cart_product_and_size(key)[0] == product_id)
+    if quantity < 1 or already_added + quantity > product.stock_quantity:
+        raise HTTPException(400, "The requested quantity is not in stock.")
+    key = cart_line_key(product.id, size, color)
+    cart[key] = int(cart.get(key, 0)) + quantity
+    request.session["cart"] = cart
+    track_event(db, request, "add_to_cart", product.id)
+    return {"success": True, "cart_count": sum(cart.values()), "cart_url": "/cart"}
 
 
 @app.post("/api/cart/place-order")
 @app.post("/api/cart/demo-order")
-async def api_cart_place_order(request: Request, db: Annotated[Session, Depends(get_db)]):
-    data = await request.json()
-    items = data.get("items", [])
-    if not items:
-        return JSONResponse(status_code=400, content={"success": False, "detail": "Your bag is empty."})
-
-    name = str(data.get("name", "")).strip() or "Valued Customer"
-    phone = str(data.get("phone", "")).strip()
-    address = str(data.get("address", "")).strip()
-    city = str(data.get("city", "")).strip() or "Kathmandu"
-    notes = str(data.get("notes", "")).strip()
-    payment_method = str(data.get("payment_method", "Cash on Delivery")).strip() or "Cash on Delivery"
-
-    user_id = request.session.get("user_id")
-    user = db.get(User, user_id) if user_id else None
-    if user:
-        if phone and not user.phone:
-            user.phone = phone
-    else:
-        clean_digits = re.sub(r'[^0-9]', '', phone)
-        if not clean_digits:
-            clean_digits = secrets.token_hex(4)
-        guest_email = f"guest.{clean_digits}@allofus.store"
-        user = db.query(User).filter((User.phone == phone) | (User.email == guest_email)).first()
-        if not user:
-            name_parts = name.split(maxsplit=1)
-            first_name = name_parts[0] if name_parts else "Store"
-            last_name = name_parts[1] if len(name_parts) > 1 else "Visitor"
-            user = User(
-                first_name=first_name,
-                last_name=last_name,
-                email=guest_email,
-                phone=phone,
-                password_hash=hash_password(secrets.token_hex(16)),
-                role="customer",
-                is_active=True,
-            )
-            db.add(user)
-            db.flush()
-
-    total_amount = Decimal("0.00")
-    shipping_details = f"{name} | Tel: {phone} | {address}, {city}"
-    if notes:
-        shipping_details += f" | Notes: {notes}"
-
-    order = Order(
-        user_id=user.id,
-        total_amount=Decimal("0.00"),
-        status="Pending",
-        channel="Online Store",
-        shipping_address=shipping_details[:300],
-        promo_code=payment_method[:50],
-        carrier="Direct Delivery",
-    )
-    db.add(order)
-    db.flush()
-
-    for item in items:
-        p_name = item.get("product")
-        p_price = Decimal(str(item.get("price", 0)))
-        p_qty = int(item.get("quantity", 1))
-        p_size = str(item.get("size", ""))
-        p_color = str(item.get("color", ""))
-
-        prod = db.query(Product).filter_by(name=p_name).first()
-        prod_id = prod.id if prod else 1
-        unit_price = prod.price if prod else p_price
-        if prod and prod.stock_quantity >= p_qty:
-            prod.stock_quantity -= p_qty
-
-        order_item = OrderItem(
-            order_id=order.id,
-            product_id=prod_id,
-            quantity=p_qty,
-            price_at_purchase=unit_price,
-            size_variation=p_size,
-            color_variation=p_color,
-        )
-        db.add(order_item)
-        total_amount += unit_price * p_qty
-
-    order.total_amount = total_amount
-    request.session["cart"] = {}
-
-    create_activity_log(
-        db,
-        actor=user,
-        module="orders",
-        action="order_placed",
-        entity_type="order",
-        entity_id=order.id,
-        details=f"New Order #{order.id:04d} placed by {name} (Phone: {phone}) for Rs {total_amount:.2f} via {payment_method}.",
-    )
-    db.commit()
-    track_event(db, request, "purchase")
-
-    return {
-        "success": True,
-        "order_id": order.id,
-        "order_number": f"#{order.id:04d}",
-        "total": float(total_amount),
-        "total_formatted": f"Rs {total_amount:,.2f}",
-        "customer_name": name,
-        "customer_phone": phone,
-        "customer_address": f"{address}, {city}",
-        "payment_method": payment_method,
-    }
+async def api_cart_place_order(request: Request):
+    # Legacy clients must never create orders from browser-supplied prices/items.
+    await read_cart_json(request)
+    return {"success": False, "checkout_url": "/checkout", "detail": "Review your bag and delivery details at checkout."}
 
 
 @app.get("/cart", name="cart_view", response_class=HTMLResponse)
@@ -1578,117 +1736,109 @@ async def update_cart(request: Request, db: Annotated[Session, Depends(get_db)])
     return safe_redirect(request, "cart_view")
 
 
+@app.get("/checkout", name="checkout_page", response_class=HTMLResponse)
+def checkout_page(request: Request, db: Annotated[Session, Depends(get_db)]):
+    lines, total = checkout_lines(request, db)
+    return page(request, "checkout.html", lines=lines, total=total, settings=checkout_settings(db))
+
+
+def checkout_lines(request, db, lock=False):
+    cart = request.session.get("cart", {})
+    lines, quantities, total = [], {}, Decimal("0.00")
+    # Consistent locking order prevents competing multi-product orders deadlocking.
+    try:
+        product_ids = sorted({cart_product_and_size(key)[0] for key in cart})
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Your bag contains an invalid item.")
+    query = db.query(Product).filter(Product.id.in_(product_ids)).order_by(Product.id)
+    if lock:
+        query = query.with_for_update()
+    products = {p.id: p for p in query.all()}
+    for key, amount in cart.items():
+        product_id, size = cart_product_and_size(key)
+        product = products.get(product_id)
+        color = cart_color(key)
+        quantity = int(amount)
+        if not product or not product.is_active or quantity < 1:
+            raise HTTPException(400, "Inventory changed. Please review your bag.")
+        validate_variant(product, size, color)
+        quantities[product_id] = quantities.get(product_id, 0) + quantity
+        if quantities[product_id] > product.stock_quantity:
+            raise HTTPException(400, "Inventory changed. Please review your bag.")
+        subtotal = product.price * quantity
+        lines.append(dict(product=product, quantity=quantity, size=size, color=color, subtotal=subtotal))
+        total += subtotal
+    return lines, total
+
+
 @app.post("/checkout", name="checkout", dependencies=[Depends(verify_csrf)])
 async def checkout(request: Request, db: Annotated[Session, Depends(get_db)]):
-    cart = request.session.get("cart", {})
-    if not cart:
-        request.session["flash"] = ["error", "Your bag is empty."]
-        return safe_redirect(request, "cart_view")
-
     form = await request.form()
+    lines, total = checkout_lines(request, db, lock=True)
+    if not lines:
+        return safe_redirect(request, "cart_view")
     user_id = request.session.get("user_id")
     user = db.get(User, user_id) if user_id else None
-
-    name = str(form.get("name", "")).strip() or "Valued Customer"
+    name = str(form.get("name", "")).strip()
     phone = str(form.get("phone", "")).strip()
     address = str(form.get("address", "")).strip()
-    city = str(form.get("city", "")).strip() or "Kathmandu"
     notes = str(form.get("notes", "")).strip()
-    payment_method = str(form.get("payment_method", "Cash on Delivery")).strip() or "Cash on Delivery"
-
-    if user:
-        if phone and not user.phone:
-            user.phone = phone
-    else:
-        clean_digits = re.sub(r'[^0-9]', '', phone) or secrets.token_hex(4)
-        guest_email = f"guest.{clean_digits}@allofus.store"
-        user = db.query(User).filter((User.phone == phone) | (User.email == guest_email)).first()
-        if not user:
-            name_parts = name.split(maxsplit=1)
-            first_name = name_parts[0] if name_parts else "Store"
-            last_name = name_parts[1] if len(name_parts) > 1 else "Visitor"
-            user = User(
-                first_name=first_name,
-                last_name=last_name,
-                email=guest_email,
-                phone=phone,
-                password_hash=hash_password(secrets.token_hex(16)),
-                role="customer",
-                is_active=True,
-            )
-            db.add(user)
-            db.flush()
-
-    validated = []
-    product_quantities = {}
-    total = Decimal("0.00")
-    for line_key, amount in cart.items():
-        try:
-            product_id, size = cart_product_and_size(line_key)
-        except ValueError:
-            request.session["flash"] = ["error", "Your bag contains an invalid item. Please review your bag."]
-            return safe_redirect(request, "cart_view")
-        product = db.get(Product, product_id)
-        quantity = int(amount)
-        if not product or not product.is_active:
-            request.session["flash"] = ["error", "Inventory changed while you were shopping. Please review your bag."]
-            return safe_redirect(request, "cart_view")
-        product_quantities[product_id] = product_quantities.get(product_id, 0) + quantity
-        if product.stock_quantity < product_quantities[product_id]:
-            request.session["flash"] = ["error", "Inventory changed while you were shopping. Please review your bag."]
-            return safe_redirect(request, "cart_view")
-        if (product_sizes(product) and size not in product_sizes(product)) or (size and not product_sizes(product)):
-            request.session["flash"] = ["error", "A selected product size is no longer available."]
-            return safe_redirect(request, "cart_view")
-        color = cart_color(line_key)
-        colors = [c["name"] for c in product_colors(product)]
-        if (colors and color not in colors) or (not colors and color):
-            request.session["flash"] = ["error", "A selected product color is no longer available."]
-            return safe_redirect(request, "cart_view")
-        validated.append((product, quantity, size, color))
-        total += product.price * quantity
-
-    shipping_details = f"{name} | Tel: {phone} | {address}, {city}"
-    if notes:
-        shipping_details += f" | Notes: {notes}"
-
-    order = Order(
-        user_id=user.id,
-        total_amount=total,
-        status="Pending",
-        channel="Online Store",
-        shipping_address=shipping_details[:300],
-        promo_code=payment_method[:50],
-        carrier="Direct Delivery",
-    )
+    method = str(form.get("payment_method", ""))
+    settings = checkout_settings(db)
+    methods = available_payment_methods(settings)
+    if not name or len(name) > 160 or not 7 <= len(re.sub(r"\D", "", phone)) <= 15 or len(phone) > 40 or not address or len(address) > 300 or len(notes) > 1000 or method not in methods:
+        raise HTTPException(400, "Enter your name, valid phone, delivery address, and an available payment/contact option.")
+    if not user:
+        parts = name.split(maxsplit=1)
+        user = User(first_name=parts[0], last_name=parts[1] if len(parts) > 1 else "",
+                    email=f"guest.{secrets.token_hex(16)}@allofus.store", phone=phone,
+                    password_hash=generate_password_hash(secrets.token_urlsafe(32)), role="customer")
+        db.add(user)
+        db.flush()
+    order = Order(user_id=user.id, total_amount=total, status="Pending", channel="Online Store",
+                  customer_name=name, customer_phone=phone, customer_notes=notes,
+                  shipping_address=address, payment_method=method, payment_status="Awaiting verification")
     db.add(order)
-    for product, quantity, size, color in validated:
-        order.items.append(OrderItem(
-            product=product, quantity=quantity,
-            size_variation=size, price_at_purchase=product.price,
-            color_variation=color,
-        ))
-        product.stock_quantity -= quantity
+    for line in lines:
+        product = line["product"]
+        ensure_stock_opening(db, product)
+        order.items.append(OrderItem(product=product, quantity=line["quantity"], size_variation=line["size"],
+                                     color_variation=line["color"], price_at_purchase=product.price))
+        product.stock_quantity -= line["quantity"]
+        db.flush()
+        record_stock_movement(db, product, -line["quantity"], "Customer order", user,
+                              reference=f"Order #{order.id:04d}")
     db.flush()
-    create_activity_log(
-        db,
-        actor=user,
-        module="orders",
-        action="order_placed",
-        entity_type="order",
-        entity_id=order.id,
-        details=f"New order #{order.id:04d} placed by {user.first_name} {user.last_name} ({phone}) for Rs {total:.2f} via {payment_method}.",
-    )
+    create_activity_log(db, actor=user, module="orders", action="order_placed", entity_type="order",
+                        entity_id=order.id, details=f"Order #{order.id:04d}: Rs {total:.2f} via {method}.")
+    visitor_id = request.session.get("visitor_id") or secrets.token_urlsafe(16)
+    db.add(AnalyticsEvent(event_type="purchase", page_path=request.url.path,
+                          session_id=visitor_id, user_id=user.id))
     db.commit()
-    track_event(db, request, "purchase")
+    request.session["visitor_id"] = visitor_id
     request.session.pop("cart", None)
-    
-    if request.session.get("user_id"):
-        request.session["flash"] = ["success", f"Order #{order.id:04d} placed successfully. Thanks for gathering with us."]
-        return safe_redirect(request, "order_history")
-    else:
-        request.session["flash"] = ["success", f"Order #{order.id:04d} placed successfully! We will call or WhatsApp you at {phone} to confirm delivery."]
-        return safe_redirect(request, "storefront")
+    request.session["recent_order_id"] = order.id
+    return RedirectResponse(f"/orders/{order.id}/confirmation", status_code=303)
+
+
+def available_payment_methods(settings):
+    methods = {}
+    if settings.qr_photo_path:
+        methods["QR payment"] = ""
+    for field, label in (("whatsapp", "WhatsApp"), ("instagram", "Instagram"), ("facebook", "Facebook"), ("tiktok", "TikTok")):
+        if getattr(settings, field):
+            methods[label] = getattr(settings, field)
+    return methods
+
+
+@app.get("/orders/{order_id}/confirmation", name="order_confirmation", response_class=HTMLResponse)
+def order_confirmation(order_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
+    order = db.get(Order, order_id)
+    if not order or not (request.session.get("recent_order_id") == order_id or request.session.get("user_id") == order.user_id):
+        raise HTTPException(404, "Order not found")
+    settings = checkout_settings(db)
+    return page(request, "order_confirmation.html", order=order, settings=settings,
+                contact_links=available_payment_methods(settings))
 
 
 @app.get("/account/orders", name="order_history", response_class=HTMLResponse)
@@ -2179,7 +2329,114 @@ def admin_inventory(request: Request, _admin: Annotated[User, Depends(require_ad
     products = db.query(Product).order_by(Product.id.desc()).all()
     ordered_product_ids = {row[0] for row in db.query(OrderItem.product_id).distinct().all()}
     ordered_product_ids.update(row[0] for row in db.query(AgentAllocation.product_id).distinct().all())
-    return page(request, "admin_inventory.html", products=products, ordered_product_ids=ordered_product_ids)
+    return page(request, "admin_inventory.html", products=products, ordered_product_ids=ordered_product_ids,
+                **stock_movement_report(db, request))
+
+
+def stock_movement_report(db, request):
+    today = datetime.utcnow().date()
+    group = request.query_params.get("group", "daily")
+    if group not in {"daily", "weekly", "monthly"}:
+        raise HTTPException(400, "Choose daily, weekly or monthly stock movements.")
+    try:
+        start = datetime.strptime(request.query_params.get("start", str(today - timedelta(days=29))), "%Y-%m-%d")
+        end = datetime.strptime(request.query_params.get("end", str(today)), "%Y-%m-%d")
+        product_id = int(request.query_params.get("product_id", "0"))
+        movement_page = int(request.query_params.get("movement_page", "1"))
+        if start > end or (end - start).days > 366 or product_id < 0 or movement_page < 1:
+            raise ValueError
+    except ValueError:
+        raise HTTPException(400, "Choose valid dates (up to 367 days), product and page.")
+    query = db.query(StockMovement)
+    products_query = db.query(Product)
+    if product_id:
+        query = query.filter_by(product_id=product_id)
+        products_query = products_query.filter_by(id=product_id)
+    opening = int(query.filter(StockMovement.created_at < start).with_entities(
+        func.coalesce(func.sum(StockMovement.quantity), 0)).scalar())
+    movements = query.filter(StockMovement.created_at >= start,
+                             StockMovement.created_at < end + timedelta(days=1)).order_by(
+                                 StockMovement.created_at, StockMovement.id).all()
+    buckets, vendors = {}, {}
+    totals = dict(stock_in=0, stock_out=0, vendor_in=0, opening_added=0)
+    for movement in movements:
+        day = movement.created_at.date()
+        if group == "weekly":
+            day -= timedelta(days=day.weekday())
+        elif group == "monthly":
+            day = day.replace(day=1)
+        row = buckets.setdefault(day, dict(period=day, stock_in=0, stock_out=0, vendor_in=0, opening_added=0, net=0))
+        if movement.reason == "Opening balance":
+            row["opening_added"] += movement.quantity
+            totals["opening_added"] += movement.quantity
+        elif movement.quantity > 0:
+            row["stock_in"] += movement.quantity
+            totals["stock_in"] += movement.quantity
+        else:
+            row["stock_out"] -= movement.quantity
+            totals["stock_out"] -= movement.quantity
+        if movement.reason == "Vendor receipt":
+            row["vendor_in"] += movement.quantity
+            totals["vendor_in"] += movement.quantity
+            vendors[movement.vendor] = vendors.get(movement.vendor, 0) + movement.quantity
+        row["net"] += movement.quantity
+    balance = opening
+    rows = []
+    for day, row in sorted(buckets.items()):
+        row["opening"] = balance
+        balance += row["net"]
+        row["closing"] = balance
+        rows.append(row)
+    all_time_vendor = int(query.filter(StockMovement.reason == "Vendor receipt").with_entities(
+        func.coalesce(func.sum(StockMovement.quantity), 0)).scalar())
+    current_stock = int(products_query.with_entities(func.coalesce(func.sum(Product.stock_quantity), 0)).scalar())
+    page_count = max(1, (len(movements) + 49) // 50)
+    movement_page = min(movement_page, page_count)
+    offset = (movement_page - 1) * 50
+    history = list(reversed(movements))[offset:offset + 50]
+    def page_link(number):
+        return "/admin/inventory?" + urlencode(dict(start=start.date(), end=end.date(), group=group,
+                                                   product_id=product_id, movement_page=number)) + "#stock-movements"
+    return dict(movement_rows=rows, movements=history, movement_totals=totals,
+                movement_opening=opening, movement_closing=balance, current_stock=current_stock,
+                vendor_total=all_time_vendor, vendor_rows=sorted(vendors.items()),
+                movement_start=start.date(), movement_end=end.date(), movement_group=group,
+                movement_product_id=product_id, movement_page=movement_page, movement_page_count=page_count,
+                movement_previous=page_link(movement_page - 1), movement_next=page_link(movement_page + 1))
+
+
+@app.post("/admin/inventory/movements", name="create_stock_movement", dependencies=[Depends(verify_csrf)])
+async def create_stock_movement(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    try:
+        product_id = int(form.get("product_id", "0"))
+        quantity = int(form.get("quantity", "0"))
+    except (ValueError, TypeError):
+        raise HTTPException(400, "Choose a product and a positive whole-number quantity.")
+    reason = str(form.get("reason", ""))
+    directions = {"Vendor receipt": 1, "Customer return": 1, "Other stock-in": 1,
+                  "Vendor return": -1, "Damaged stock": -1, "Other stock-out": -1}
+    vendor = str(form.get("vendor", "")).strip()
+    reference = str(form.get("reference", "")).strip()
+    notes = str(form.get("notes", "")).strip()
+    if (reason not in directions or not 1 <= quantity <= 1000000 or len(vendor) > 140
+            or len(reference) > 140 or len(notes) > 1000
+            or (reason in {"Vendor receipt", "Vendor return"} and not vendor)):
+        raise HTTPException(400, "Enter a valid movement, quantity, and vendor for vendor receipts/returns. Keep notes under 1000 characters.")
+    product = db.query(Product).filter_by(id=product_id).with_for_update().first()
+    if not product:
+        raise HTTPException(404, "Product not found.")
+    change = quantity * directions[reason]
+    if product.stock_quantity + change < 0 or product.stock_quantity + change > 2147483647:
+        raise HTTPException(400, "Insufficient stock or stock quantity exceeds the supported limit.")
+    ensure_stock_opening(db, product)
+    product.stock_quantity += change
+    record_stock_movement(db, product, change, reason, _admin, vendor, reference, notes)
+    create_activity_log(db, actor=_admin, module="inventory", action="stock_movement", entity_type="product",
+                        entity_id=product.id, details=f"{reason}: {change:+d} {product.name}. Vendor: {vendor or 'N/A'}.")
+    db.commit()
+    request.session["flash"] = ["success", "Stock movement saved and inventory updated."]
+    return RedirectResponse("/admin/inventory#stock-movements", status_code=303)
 
 
 @app.get("/admin/rbac", name="admin_rbac", response_class=HTMLResponse)
@@ -2208,7 +2465,8 @@ async def create_user_account(request: Request, _admin: Annotated[User, Depends(
     phone = str(form.get("phone", "")).strip()
     password = str(form.get("password", ""))
     role = normalize_role(form.get("role"))
-    if not first_name or not last_name or not email or len(password) < 8 or not email or "@" not in email:
+    if (not first_name or not last_name or len(first_name) > 80 or len(last_name) > 80
+            or len(phone) > 40 or not 8 <= len(password) <= 128 or not valid_account_email(email)):
         raise HTTPException(status_code=400, detail="Provide a valid first name, last name, email, and a password with at least 8 characters.")
     if not user_can_manage_role(_admin, role):
         raise HTTPException(status_code=403, detail="You do not have permission to create that account type.")
@@ -2230,6 +2488,10 @@ async def create_user_account(request: Request, _admin: Annotated[User, Depends(
         if not agent:
             agent = Agent(name=agent_name, phone=phone, email=email)
             db.add(agent)
+        db.flush()
+        if agent.user_id is not None:
+            raise HTTPException(409, "This agent already has a login account.")
+        agent.user_id = user.id
     db.flush()
     create_activity_log(db, actor=_admin, module="users", action="created", entity_type="user", entity_id=user.id,
                        details=f"Created {ROLE_LABELS.get(role, 'User')} account for {user.email}.")
@@ -2292,7 +2554,11 @@ async def allocate_agent_stock(request: Request, _admin: Annotated[User, Depends
                                 size_variation=size, color_variation=color, list_price=product.price,
                                 company_discount_percent=discount, unit_cost=money(product.price * (1 - discount / 100)))
     db.add(allocation)
+    ensure_stock_opening(db, product)
     product.stock_quantity -= quantity
+    db.flush()
+    record_stock_movement(db, product, -quantity, "Agent allocation", _admin,
+                          reference=f"Allocation #{allocation.id} / {agent.name}")
     create_activity_log(db, actor=_admin, module="agents", action="allocated", entity_type="allocation", entity_id=allocation.id,
                        details=f"Allocated {quantity} {product.name} units to {agent.name}.")
     db.commit()
@@ -2334,7 +2600,8 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
                 "overview": "Business summary, customers, revenue, orders, low stock",
                 "content": "Website pages, publishing, contact messages",
                 "crm": "Customers, email, phone, marketing preferences, purchase history",
-                "users": "User account creation, access control, roles, and RBAC permissions",
+                "rbac": "User account creation, access control, roles, and RBAC permissions",
+                "users": "User account creation and access management",
                 "inventory": "Products, categories, prices, sizes, stock, add, edit, delete",
                 "agents": "Agent leaderboard, allocations, acquisition costs, sales, commission",
                 "sales": "Revenue, daily sales, best sellers, units sold",
@@ -2416,7 +2683,7 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
     period = request.query_params.get("period", "30")
     if period not in {"today", "7", "30", "90", "all"}:
         period = "30"
-    
+
     now = datetime.utcnow()
     if period == "today":
         since = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2450,12 +2717,12 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         qty = item.quantity
         line_rev = item.price_at_purchase * qty
         prod = item.product
-        
+
         # Product unit manufacturing vendor cost (COGS)
         # If product COGS is set use it, otherwise benchmark at 38% of product standard price for direct manufacturing
         unit_cogs = prod.cogs if (getattr(prod, "cogs", None) and prod.cogs > 0) else (prod.price * Decimal("0.38"))
         line_cogs = unit_cogs * qty
-        
+
         total_units_sold += qty
         gross_revenue += line_rev
         total_cogs += line_cogs
@@ -2790,7 +3057,10 @@ async def record_sale(
     if allocation:
         allocation.remaining -= quantity
     else:
+        ensure_stock_opening(db, product)
         product.stock_quantity -= quantity
+        record_stock_movement(db, product, -quantity, "Recorded sale", _admin,
+                              reference=f"Order #{order.id:04d}")
 
     # Track purchase event
     track_event(db, request, "purchase", product_id=product.id)
@@ -2815,6 +3085,69 @@ def admin_orders(request: Request, _admin: Annotated[User, Depends(require_admin
         request, "admin_orders.html", orders=query.all(),
         service_requests=service_requests, selected_status=status,
     )
+
+
+@app.get("/admin/checkout-settings", name="admin_checkout_settings", response_class=HTMLResponse)
+def admin_checkout_settings(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    return page(request, "admin_checkout_settings.html", settings=checkout_settings(db))
+
+
+@app.post("/admin/checkout-settings", dependencies=[Depends(verify_csrf)])
+async def save_checkout_settings(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    values = {}
+    hosts = {"whatsapp": {"wa.me", "api.whatsapp.com"}, "instagram": {"instagram.com", "www.instagram.com"},
+             "facebook": {"facebook.com", "www.facebook.com", "fb.com"}, "tiktok": {"tiktok.com", "www.tiktok.com"}}
+    for field, allowed_hosts in hosts.items():
+        value = str(form.get(field, "")).strip()
+        parsed = urlparse(value)
+        if value and (len(value) > 255 or parsed.scheme != "https" or parsed.hostname not in allowed_hosts or parsed.username or parsed.password):
+            raise HTTPException(400, f"Enter a valid HTTPS {field} business link.")
+        values[field] = value
+    instructions = str(form.get("payment_instructions", "")).strip()
+    if len(instructions) > 2000:
+        raise HTTPException(400, "Payment instructions must be under 2000 characters.")
+    try:
+        image = await read_product_image(form)
+    except ValueError as error:
+        raise HTTPException(400, str(error))
+    settings = checkout_settings(db)
+    for field, value in values.items():
+        setattr(settings, field, value)
+    settings.payment_instructions = instructions
+    if image:
+        settings.qr_photo_path = save_product_image(image)
+    elif form.get("remove_qr"):
+        settings.qr_photo_path = ""
+    db.add(settings)
+    db.commit()
+    request.session["flash"] = ["success", "Payment and contact settings saved."]
+    return RedirectResponse("/admin/checkout-settings", status_code=303)
+
+
+@app.get("/admin/orders/{order_id}", name="admin_order_detail", response_class=HTMLResponse)
+def admin_order_detail(order_id: int, request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    return page(request, "admin_order_detail.html", order=order)
+
+
+@app.post("/admin/orders/{order_id}/payment", name="update_order_payment", dependencies=[Depends(verify_csrf)])
+async def update_order_payment(order_id: int, request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    order = db.get(Order, order_id)
+    if not order:
+        raise HTTPException(404, "Order not found")
+    form = await request.form()
+    status = str(form.get("payment_status", ""))
+    if status not in {"Awaiting verification", "Paid", "Rejected", "Refunded"}:
+        raise HTTPException(400, "Invalid payment status")
+    order.payment_status = status
+    order.gateway_ref = str(form.get("gateway_ref", "")).strip()[:100]
+    create_activity_log(db, actor=_admin, module="orders", action="payment_updated", entity_type="order",
+                        entity_id=order.id, details=f"Payment verification: {status}")
+    db.commit()
+    return RedirectResponse(f"/admin/orders/{order_id}", status_code=303)
 
 
 @app.post("/admin/order-requests/{request_id}", name="update_order_request", dependencies=[Depends(verify_csrf)])
@@ -2911,6 +3244,8 @@ async def create_product(request: Request, _admin: Annotated[User, Depends(requi
         product_values["photo_path"] = save_product_image(image)
     product = Product(**product_values)
     db.add(product)
+    db.flush()
+    ensure_stock_opening(db, product)
     db.commit()
     if product_values["is_active"]:
         request.session["flash"] = ["success", "Product added to inventory and published to Shop. Use View in shop to see its product page."]
@@ -2921,7 +3256,7 @@ async def create_product(request: Request, _admin: Annotated[User, Depends(requi
 
 @app.post("/admin/products/{product_id}", name="update_product", dependencies=[Depends(verify_csrf)])
 async def update_product(product_id: int, request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
-    product = db.get(Product, product_id)
+    product = db.query(Product).filter_by(id=product_id).with_for_update().first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     form = await request.form()
@@ -2937,8 +3272,12 @@ async def update_product(product_id: int, request: Request, _admin: Annotated[Us
         product_values["photo_path"] = save_product_image(image)
     elif form.get("remove_photo") == "on":
         product_values["photo_path"] = ""
+    ensure_stock_opening(db, product)
+    stock_change = product_values["stock_quantity"] - product.stock_quantity
     for field, value in product_values.items():
         setattr(product, field, value)
+    record_stock_movement(db, product, stock_change, "Inventory adjustment", _admin,
+                          notes="Stock balance changed in product editor.")
     db.commit()
     request.session["flash"] = ["success", "Product updated."]
     return RedirectResponse(f"/admin/inventory#product-{product.id}", status_code=303)
@@ -2946,7 +3285,7 @@ async def update_product(product_id: int, request: Request, _admin: Annotated[Us
 
 @app.post("/admin/products/{product_id}/delete", name="delete_product", dependencies=[Depends(verify_csrf)])
 async def delete_product(product_id: int, request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
-    product = db.get(Product, product_id)
+    product = db.query(Product).filter_by(id=product_id).with_for_update().first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     if db.query(OrderItem).filter_by(product_id=product_id).first() or db.query(AgentAllocation).filter_by(product_id=product_id).first():
@@ -2954,6 +3293,12 @@ async def delete_product(product_id: int, request: Request, _admin: Annotated[Us
         return RedirectResponse(f"/admin/inventory#product-{product_id}", status_code=303)
     # Keep aggregate event history without leaving dangling product references.
     db.query(AnalyticsEvent).filter_by(product_id=product_id).update({"product_id": None})
+    ensure_stock_opening(db, product)
+    removed = product.stock_quantity
+    product.stock_quantity = 0
+    record_stock_movement(db, product, -removed, "Product removed", _admin)
+    db.flush()
+    db.query(StockMovement).filter_by(product_id=product_id).update({"product_id": None})
     db.delete(product)
     db.commit()
     cart = request.session.get("cart", {})

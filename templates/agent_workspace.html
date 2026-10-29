@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+{% block title %}Agent {{ agent_module|title }}{% endblock %}
+{% block content %}
+<section class="page-shell">
+  <header><p class="eyebrow">Agent workspace · {{ agent.name }}</p><h1>{{ agent_module|title }}</h1>
+    {% if current_user.profile_image %}<img src="{{ url_for('static', filename=current_user.profile_image) }}" alt="Your profile" width="80" height="80" style="border-radius:50%;object-fit:cover">{% endif %}
+    <nav aria-label="Agent modules">{% for module in ['crm','inventory','sales'] %}<a class="button button-outline" href="{{ url_for('agent_workspace', module=module) }}">{{ module|upper if module == 'crm' else module|title }}</a> {% endfor %}<a href="{{ url_for('account_profile') }}">Edit profile & picture ↗</a></nav>
+  </header>
+  {% if agent_module == 'crm' %}
+  <h2>Your customers</h2><p>Only customers linked to your sales are shown. Purchase history below is limited to your own sales.</p>
+  <div class="table-wrap"><table><thead><tr><th>Customer</th><th>Contact</th><th>Your sales / prices</th></tr></thead><tbody>
+  {% for row in customer_rows %}<tr><td>{{ row.customer.first_name }} {{ row.customer.last_name }}</td><td>{{ row.customer.email }}<small>{{ row.customer.phone }}</small></td><td>{% for order in row.orders %}#{{ order.id }} · {{ order.customer_name or row.customer.first_name }} · {{ order.customer_phone }} · {{ order.status }} · Rs {{ '%.2f'|format(order.total_amount) }}<br>{% for item in order.items %}{{ item.quantity }} × {{ item.product.name }} @ Rs {{ '%.2f'|format(item.price_at_purchase) }}<br>{% endfor %}{% endfor %}</td></tr>{% else %}<tr><td colspan="3">No customers from your sales yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% elif agent_module == 'inventory' %}
+  <h2>Products taken — sold / remaining</h2><p>Read-only inventory. Contact an administrator for stock allocations or changes.</p>
+  <div class="table-wrap"><table><thead><tr><th>Allocation</th><th>Product / variant</th><th>Taken</th><th>Sold / recorded</th><th>Remaining to sell</th><th>Acquisition / unit</th></tr></thead><tbody>
+  {% for a in allocations %}<tr><td>#{{ a.id }}</td><td>{{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }}</td><td>{{ a.quantity }}</td><td>{{ a.quantity - a.remaining }}</td><td>{{ a.remaining }}</td><td>Rs {{ a.unit_cost }}</td></tr>{% else %}<tr><td colspan="6">No products allocated.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h2>Product catalog — view only</h2>
+  <div class="table-wrap"><table><thead><tr><th>Product</th><th>Details</th><th>List price</th><th>Store availability</th></tr></thead><tbody>
+  {% for product in products %}<tr><td>{% if product.photo_path %}<img src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" width="80">{% endif %}<a href="{{ url_for('product_detail', product_id=product.id) }}">{{ product.name }}</a></td><td>{{ product.description }}<small>{{ product.size_variations }}</small></td><td>Rs {{ product.price }}</td><td>{{ product.stock_quantity }}</td></tr>{% else %}<tr><td colspan="4">No active products.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}
+  <h2>Record a sale from your allocated stock</h2>
+  <form method="post" action="{{ url_for('agent_record_sale') }}" class="checkout-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Your allocation<select name="allocation_id" required>{% for a in allocations if a.remaining > 0 %}<option value="{{ a.id }}">#{{ a.id }} {{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }} — {{ a.remaining }} remaining</option>{% endfor %}</select></label>
+    <label>Quantity<input name="quantity" type="number" min="1" step="1" required></label>
+    <label>Actual selling price per unit (Rs)<input name="price" type="number" min="0.01" max="99999999.99" step="0.01" required></label>
+    <label>Customer name<input name="name" maxlength="160" required></label>
+    <label>Customer phone<input name="phone" type="tel" maxlength="40" required></label>
+    <label>Customer email (optional)<input name="email" type="email" maxlength="255"></label>
+    <label>Delivery address (optional)<textarea name="address" maxlength="300"></textarea></label>
+    <p>Sales are saved as Completed. Commission is not agent-editable; administrators review commission and any corrections.</p>
+    <button class="button button-dark">Save sale</button>
+  </form>
+  <h2>Your sales ledger</h2><div class="table-wrap"><table><thead><tr><th>Order / date</th><th>Customer</th><th>Items / actual selling price</th><th>Total</th><th>Status</th></tr></thead><tbody>
+  {% for order in agent_orders %}<tr><td>#{{ order.id }}<small>{{ order.created_at.strftime('%Y-%m-%d') }}</small></td><td>{{ order.customer_name or (order.user.first_name ~ ' ' ~ order.user.last_name) }}<small>{{ order.customer_phone or order.user.phone }}</small></td><td>{% for item in order.items %}{{ item.quantity }} × {{ item.product.name }} @ Rs {{ '%.2f'|format(item.price_at_purchase) }}<br>{% endfor %}</td><td>Rs {{ '%.2f'|format(order.total_amount) }}</td><td>{{ order.status }}</td></tr>{% else %}<tr><td colspan="5">No sales yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Order #{{ '%04d'|format(order.id) }} · All of Us{% endblock %}
+{% block content %}
+<section class="page-shell">
+  <p class="eyebrow">Order received</p><h1>Order #{{ '%04d'|format(order.id) }}</h1>
+  <p>Thank you, {{ order.customer_name }}. Your order has been saved. Keep this order number for payment and communication.</p>
+  <p><strong>Order total: Rs {{ '%.2f'|format(order.total_amount) }}</strong></p>
+  {% for item in order.items %}<p>{{ item.quantity }} × {{ item.product.name }} · {{ item.size_variation }} {{ item.color_variation }} · Rs {{ '%.2f'|format(item.price_at_purchase * item.quantity) }}</p>{% endfor %}
+  <p>Delivery: {{ order.shipping_address }}</p>
+  <p>Chosen option: {{ order.payment_method }} · {{ order.payment_status }}</p>
+  {% if order.payment_method == 'QR payment' and settings.qr_photo_path %}
+  <img class="payment-qr" src="{{ url_for('static', filename=settings.qr_photo_path) }}" alt="Store payment QR code">
+  <p>Use order #{{ '%04d'|format(order.id) }} as your payment reference. Share your payment receipt with the store. Payment is not confirmed until the team verifies it.</p>
+  {% endif %}
+  <p>{{ settings.payment_instructions }}</p>
+  <p>Delivery charges, if any, are confirmed separately before payment.</p>
+  <h2>Contact us about this order</h2>
+  <div class="checkout-contact-links">{% for label, link in contact_links.items() if link %}<a class="button button-outline" href="{{ link }}" target="_blank" rel="noopener noreferrer">{{ label }} ↗</a>{% else %}<p>Contact links have not been configured yet.</p>{% endfor %}</div>
+  <p><a href="{{ url_for('shop_page') }}">Continue shopping →</a></p>
+</section>
+{% endblock %}

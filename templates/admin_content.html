@@ -105,7 +105,7 @@
             </label>
             <label class="content-field-wide">
               <span>SEO meta description</span>
-              <textarea name="meta_description" rows="2" maxlength="320" required>{{ shop_item.meta_description if shop_item else 'Shop the All of Us collection — animated stitched-circle apparel selector with product details, size/color/quantity selection, and a multi-item demo shopping bag.' }}</textarea>
+              <textarea name="meta_description" rows="2" maxlength="320" required>{{ shop_item.meta_description if shop_item else 'Shop the All of Us collection with product details, size and color selection, and order checkout.' }}</textarea>
             </label>
             <label class="content-publish">
               <input type="checkbox" name="published" {% if not shop_item or shop_item.published %}checked{% endif %}>
@@ -267,7 +267,7 @@
     <section style="background: #ffffff; border: 1px solid #e2e0dc; border-radius: 6px; padding: 20px;">
       <h3 style="font-family: var(--serif); font-size: 18px; margin: 0 0 4px 0;">Edit Home page content</h3>
       <p style="font-size: 11px; color: #666; margin: 0 0 16px 0;">Manage the editorial hero photo, headline typography, CTA button, announcements, and featured section.</p>
-      
+
       <form class="content-editor" method="post" action="{{ url_for('admin_content_update', page_key='home') }}" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="content-editor-grid">
@@ -285,23 +285,23 @@
 
           <label><span>Hero eyebrow</span><input name="hero_eyebrow" value="{{ home_item.hero_eyebrow if home_item else 'Made for everyday together' }}" maxlength="100"></label>
           <label><span>Photo caption</span><input name="hero_video_caption" value="{{ home_item.hero_video_caption if home_item else 'ALL OF US / EDITORIAL' }}" maxlength="120"></label>
-          
+
           <label class="content-field-wide"><span>Hero headline (each line on new line)</span><textarea name="hero_heading" rows="3" maxlength="240" required>{{ home_item.hero_heading if home_item else 'Good things
 have a way of
 bringing us in.' }}</textarea><small>For a multi-line headline with italic emphasis on the last line, place each line on a new line.</small></label>
           <label class="content-field-wide"><span>Hero introduction</span><textarea name="hero_intro" rows="2" maxlength="2000">{{ home_item.hero_intro if home_item else 'Thoughtful pieces for the rituals, rooms, and people that make a life feel like yours.' }}</textarea></label>
-          
+
           <label><span>CTA button label</span><input name="hero_cta_label" value="{{ home_item.hero_cta_label if home_item else 'Find your something' }}" maxlength="80"></label>
           <label><span>CTA button link</span><input name="hero_cta_url" value="{{ home_item.hero_cta_url if home_item else '/shop' }}" maxlength="200" placeholder="/shop"></label>
-          
+
           <label class="content-field-wide"><span>Site announcement banner</span><input name="site_announcement" value="{{ home_item.site_announcement if home_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240"></label>
-          
+
           <label><span>Our Story eyebrow</span><input name="section_eyebrow" value="{{ home_item.section_eyebrow if home_item else 'OUR STORY' }}" maxlength="100"></label>
           <label><span>Our Story heading</span><input name="section_heading" value="{{ home_item.section_heading if home_item else 'Made by friends, for all of us.' }}" maxlength="240"></label>
-          
+
           <label class="content-field-wide"><span>Our Story description</span><textarea name="body" rows="3" maxlength="2000">{{ home_item.body if home_item else 'Heavyweight fleece, honest denim and soft ribbed cotton — pieces cut roomy, built to last, and made to be shared.' }}</textarea></label>
           <label class="content-field-wide"><span>Our Story CTA button label</span><input name="closing_heading" value="{{ home_item.closing_heading if home_item else 'Shop the collection' }}" maxlength="100"></label>
-          
+
           <label><span>Footer tagline</span><input name="footer_tagline" value="{{ home_item.footer_tagline if home_item else 'Good things are better together.' }}" maxlength="240"></label>
           <label class="content-field-wide"><span>SEO meta description</span><textarea name="meta_description" rows="2" maxlength="320" required>{{ home_item.meta_description if home_item else 'Shop thoughtful everyday pieces for the rituals, rooms, and people that make a life feel like yours.' }}</textarea></label>
         </div>

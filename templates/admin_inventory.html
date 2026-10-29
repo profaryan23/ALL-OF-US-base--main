@@ -8,6 +8,7 @@
     <div>
       <p class="eyebrow">Catalog controls</p>
       <h2>Product inventory</h2>
+      <a href="#stock-movements">Stock-in, stock-out & vendor reports ↓</a>
     </div>
     <div class="inventory-head-actions">
       <span class="product-count">{{ products|length }} item{{ 's' if products|length != 1 else '' }}</span>
@@ -108,7 +109,7 @@
 
     <!-- Right Column: Detail & Form View in the Right Corner -->
     <aside class="inventory-right-panel" id="inventory-right-pane">
-      
+
       <!-- Right Pane: Add Product Form -->
       <div id="add-product-panel" class="detail-card add-product-card" style="display: none;">
         <div class="detail-header">
@@ -222,7 +223,7 @@
                   <small>Colors (click to switch photo):</small>
                   <div class="preview-swatches-bar">
                     {% for c in pcolors %}
-                      <button type="button" class="preview-swatch-chip" 
+                      <button type="button" class="preview-swatch-chip"
                               data-preview-target="preview-img-{{ product.id }}"
                               data-photo-url="{{ url_for('static', filename=c.photo_path) if c.photo_path else (url_for('static', filename=product.photo_path) if product.photo_path else '') }}"
                               title="{{ c.name }}">
@@ -297,4 +298,5 @@
     </aside>
   </div>
 </section>
+{% include 'inventory_movements.html' %}
 {% endblock %}

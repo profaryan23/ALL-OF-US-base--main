@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Place your order · All of Us{% endblock %}
+{% block content %}
+<section class="page-shell">
+  <div class="page-heading"><h1>Place your order.</h1><a href="{{ url_for('cart_view') }}">← Back to bag</a></div>
+  {% if lines %}
+  <div class="cart-layout">
+    <form method="post" action="{{ url_for('checkout') }}" class="checkout-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>Your name<input name="name" maxlength="160" autocomplete="name" required value="{{ current_user.first_name ~ ' ' ~ current_user.last_name if current_user else '' }}"></label>
+      <label>Phone / WhatsApp<input name="phone" maxlength="40" type="tel" autocomplete="tel" required value="{{ current_user.phone if current_user else '' }}"></label>
+      <label>Delivery address<textarea name="address" maxlength="300" autocomplete="street-address" required></textarea></label>
+      <label>Order notes (optional)<textarea name="notes" maxlength="1000"></textarea></label>
+      <fieldset><legend>Choose payment or order communication</legend>
+        {% for method in available_payment_methods(settings) %}
+        <label class="payment-option"><input type="radio" name="payment_method" value="{{ method }}" required> {{ method }}{% if method != 'QR payment' %} — arrange your order with us{% endif %}</label>
+        {% else %}<p role="alert">The store has not configured payment or contact options yet. Please try again later.</p>{% endfor %}
+      </fieldset>
+      {% if settings.qr_photo_path %}<p>QR payment is manually verified. Your QR code and payment reference will appear after you place the order.</p>{% endif %}
+      <p>{{ settings.payment_instructions }}</p>
+      <p>Delivery charges, if any, are confirmed separately before payment. Placing an order does not mark it paid.</p>
+      <button class="button button-dark" type="submit" {% if not available_payment_methods(settings) %}disabled{% endif %}>Place order →</button>
+    </form>
+    <aside class="order-summary"><h2>Order total</h2>
+      {% for line in lines %}<p>{{ line.quantity }} × {{ line.product.name }}{% if line.size %} · {{ line.size }}{% endif %}{% if line.color %} · {{ line.color }}{% endif %}<strong> Rs {{ '%.2f'|format(line.subtotal) }}</strong></p>{% endfor %}
+      <div class="summary-row summary-total"><span>Order total price</span><strong>Rs {{ '%.2f'|format(total) }}</strong></div>
+    </aside>
+  </div>
+  {% else %}<p>Your bag is empty.</p><a href="{{ url_for('shop_page') }}">Continue shopping →</a>{% endif %}
+</section>
+{% endblock %}

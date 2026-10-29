@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Shop Essentials · All of Us{% endblock %}
-{% block meta_description %}Shop the All of Us collection — animated stitched-circle apparel selector with product details, size/color/quantity selection, and a multi-item demo shopping bag.{% endblock %}
+{% block meta_description %}Shop the All of Us collection — animated stitched-circle apparel selector with product details, size/color/quantity selection, and a shopping bag and secure order checkout.{% endblock %}
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='storefront/storefront.css') }}?v=20261028-7">
@@ -9,7 +9,7 @@
 {% set products_data = [] %}
 {% for p in products %}
   {% set prod_colors = product_colors(p) %}
-  {% set prod_sizes = (p.size_variations.split(',')|map('trim')|reject('equalto', '')|list) if p.size_variations else (['28', '29', '30', '31', '32', '33', '34'] if (p.category or '')|lower in ['bottoms', 'pants', 'jeans'] else ['M', 'L', 'XL']) %}
+  {% set prod_sizes = (p.size_variations.split(',')|map('trim')|reject('equalto', '')|list) if p.size_variations else [] %}
   {% set color_list = [] %}
   {% for col in prod_colors %}
     {% set col_photo = url_for('static', filename=col.photo_path) if col.photo_path else (url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png')) %}
@@ -23,7 +23,7 @@
   {% endfor %}
   {% if not color_list %}
     {% set base_img = url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png') %}
-    {% set color_list = [{'name': 'Original', 'hex': '#222222', 'photo_path': p.photo_path or '', 'img': base_img, 'filter': 'none'}] %}
+    {% set color_list = [{'name': '', 'hex': '#222222', 'photo_path': p.photo_path or '', 'img': base_img, 'filter': 'none'}] %}
   {% endif %}
   {% set _ = products_data.append({
     'id': p.id,
@@ -83,9 +83,10 @@
     <h2 class="sf-product-name" id="detailName">Denim Baggy Jeans</h2>
     <p class="sf-product-price">
       <span id="detailPrice">Rs 2,800.00</span>
-      <span class="sf-price-note">· Demo price</span>
+      <span class="sf-price-note" id="detailStock"></span>
     </p>
-    <p class="sf-product-desc" id="detailDesc">Baggy denim jeans with a wide-leg silhouette and a laid-back look.</p>
+    <p class="sf-product-desc" id="detailDesc"></p>
+    <a id="detailProductLink" class="sf-view-bag-link">Full product details ↗</a>
 
     <p class="sf-color-label">Colour: <span id="detailColorName">Blue</span></p>
     <div class="sf-swatches-row" id="detailSwatches"></div>
@@ -110,38 +111,6 @@
     <button type="button" class="sf-view-bag-link" id="viewBagLink" style="display: none;">View bag (0)</button>
   </section>
 
-  <!-- Shopping Bag Modal Dialog -->
-  <div class="sf-modal-backdrop" id="bagModal" style="display: none;">
-    <div class="sf-modal-box">
-      <div class="sf-modal-header">
-        <h3 class="sf-modal-title" id="modalTitle">Your shopping bag</h3>
-        <button type="button" class="sf-modal-close" id="modalCloseBtn" aria-label="Close">✕</button>
-      </div>
-      <p class="sf-modal-desc" id="modalDesc">Demo checkout · 0 items · Sample prices</p>
-
-      <div id="modalStageCart">
-        <div class="sf-modal-items" id="modalItemsList"></div>
-        <div class="sf-modal-total-row">
-          <span>Demo total</span>
-          <span id="modalTotalAmount">Rs 0.00</span>
-        </div>
-        <button type="button" class="sf-modal-primary-btn" id="proceedCheckoutBtn">Proceed to demo checkout →</button>
-      </div>
-
-      <div id="modalStageReview" style="display: none;">
-        <p style="font-size: 13.5px; color: #555; margin-bottom: 20px; line-height: 1.5;">Demo only. Shipping and payment are not collected.</p>
-        <button type="button" class="sf-modal-primary-btn" id="placeDemoOrderBtn">Place demo order ✓</button>
-        <button type="button" class="sf-modal-secondary-btn" id="backToBagBtn" style="margin-top: 8px;">← Back to bag</button>
-      </div>
-
-      <div id="modalStageComplete" style="display: none; text-align: center; padding: 20px 0;">
-        <div style="font-size: 36px; margin-bottom: 12px;">✓</div>
-        <p style="font-size: 15px; font-weight: 500; color: #141414; margin-bottom: 8px;">Your selections are confirmed for this demo.</p>
-        <p style="font-size: 13px; color: #777; margin-bottom: 24px;">No payment was taken and no real order was placed.</p>
-        <button type="button" class="sf-modal-primary-btn" id="completeDoneBtn">Continue shopping →</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -186,19 +155,10 @@
   var sfNotice = document.getElementById("sfNotice");
   var viewBagLink = document.getElementById("viewBagLink");
 
-  var bagModal = document.getElementById("bagModal");
-  var modalCloseBtn = document.getElementById("modalCloseBtn");
-  var modalTitle = document.getElementById("modalTitle");
-  var modalDesc = document.getElementById("modalDesc");
-  var modalItemsList = document.getElementById("modalItemsList");
-  var modalTotalAmount = document.getElementById("modalTotalAmount");
-  var modalStageCart = document.getElementById("modalStageCart");
-  var modalStageReview = document.getElementById("modalStageReview");
-  var modalStageComplete = document.getElementById("modalStageComplete");
-  var proceedCheckoutBtn = document.getElementById("proceedCheckoutBtn");
-  var placeDemoOrderBtn = document.getElementById("placeDemoOrderBtn");
-  var backToBagBtn = document.getElementById("backToBagBtn");
-  var completeDoneBtn = document.getElementById("completeDoneBtn");
+  var csrfToken = {{ csrf_token()|tojson }};
+  function openBag() { window.location.href = {{ url_for('cart_view')|tojson }}; }
+  document.getElementById("shopBagHeaderBtn").addEventListener("click", openBag);
+  viewBagLink.addEventListener("click", openBag);
 
   var N = products.length;
   if (N === 0) {
@@ -337,6 +297,8 @@
     detailName.textContent = p.name;
     detailPrice.textContent = "Rs " + p.price.toLocaleString("en-US", { minimumFractionDigits: 2 });
     detailDesc.textContent = p.description;
+    document.getElementById("detailStock").textContent = p.stock > 0 ? " · " + p.stock + " in stock" : " · Out of stock";
+    document.getElementById("detailProductLink").href = "/shop/product/" + p.id;
     detailColorName.textContent = col.name;
 
     // Populate Swatches
@@ -373,7 +335,8 @@
 
     // Populate Sizes
     detailSizes.innerHTML = "";
-    var sizesList = (p.sizes && p.sizes.length > 0) ? p.sizes : ["M", "L", "XL"];
+    var sizesList = p.sizes || [];
+    detailSizes.closest("fieldset").hidden = sizesList.length === 0;
     sizesList.forEach(function(sz) {
       var sizeBtn = document.createElement("button");
       sizeBtn.type = "button";
@@ -396,20 +359,15 @@
     qtyNum.textContent = "1";
     qtyMinusBtn.disabled = true;
     updateFormValidation();
-    sfNotice.textContent = "Select a size";
     viewBagLink.style.display = "none";
   }
 
   function updateFormValidation() {
-    if (selectedSize) {
-      addToBagBtn.disabled = false;
-      addToBagBtn.classList.add("sf-add-btn-enabled");
-      sfNotice.textContent = "";
-    } else {
-      addToBagBtn.disabled = true;
-      addToBagBtn.classList.remove("sf-add-btn-enabled");
-      sfNotice.textContent = "Select a size";
-    }
+    var p = products[activeProductIndex];
+    var allowed = p && p.stock > 0 && (!p.sizes.length || selectedSize);
+    addToBagBtn.disabled = !allowed;
+    addToBagBtn.classList.toggle("sf-add-btn-enabled", Boolean(allowed));
+    sfNotice.textContent = !p || p.stock < 1 ? "Out of stock" : (!allowed ? "Select a size" : "");
   }
 
   // Quantity controls
@@ -422,247 +380,36 @@
   });
 
   qtyPlusBtn.addEventListener("click", function() {
+    if (activeProductIndex === null || selectedQuantity >= products[activeProductIndex].stock) return;
     selectedQuantity++;
     qtyNum.textContent = selectedQuantity;
     qtyMinusBtn.disabled = false;
   });
 
-  // Add to Bag Action
-  addToBagBtn.addEventListener("click", function() {
-    if (!selectedSize || activeProductIndex === null) return;
+  // The server bag is authoritative; never claim success before it confirms.
+  addToBagBtn.addEventListener("click", async function() {
+    if (activeProductIndex === null) return;
     var p = products[activeProductIndex];
-    var col = p.colors[selectedColorIndex] || p.colors[0] || { name: "Original", hex: "#222222", filter: "none" };
-
-    var itemKey = p.name + ":" + col.name + ":" + selectedSize;
-    var existing = cart.find(function(it) { return it.key === itemKey; });
-    if (existing) {
-      existing.quantity += selectedQuantity;
-    } else {
-      cart.push({
-        key: itemKey,
-        product: p.name,
-        color: col.name,
-        size: selectedSize,
-        price: p.price,
-        quantity: selectedQuantity,
-        img: col.img || p.img,
-        filter: col.photo_path ? "none" : (col.filter || "none")
-      });
-    }
-
-    updateCartCount();
-    sfNotice.textContent = selectedQuantity + " × " + p.name + " · " + col.name + " · " + selectedSize + " added to bag";
-    viewBagLink.textContent = "View bag (" + getCartTotalItems() + ")";
-    viewBagLink.style.display = "inline-block";
-
-    // Background sync with session cart
+    var col = p.colors[selectedColorIndex] || {name: ""};
+    addToBagBtn.disabled = true;
     try {
-      fetch("/api/cart/add", {
+      var response = await fetch("/api/cart/add", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product: p.name,
-          color: col.name,
-          size: selectedSize,
-          quantity: selectedQuantity
-        })
-      }).then(function(r) { return r.json(); }).then(function(data) {
-        if (data && data.cart_count !== undefined) {
-          var headerBag = document.querySelector(".bag-link span");
-          if (headerBag) headerBag.textContent = data.cart_count;
-        }
-      }).catch(function() {});
-    } catch (_) {}
-  });
-
-  function getCartTotalItems() {
-    return cart.reduce(function(sum, it) { return sum + it.quantity; }, 0);
-  }
-
-  function getCartTotalPrice() {
-    return cart.reduce(function(sum, it) { return sum + (it.price * it.quantity); }, 0);
-  }
-
-  function updateCartCount() {
-    var count = getCartTotalItems();
-    var headerBag = document.querySelector(".bag-link span");
-    if (headerBag) headerBag.textContent = count;
-    var topShopBag = document.getElementById("headerBagCount");
-    if (topShopBag) topShopBag.textContent = "(" + count + ")";
-  }
-
-  // Modal Open / Close
-  function openBagModal() {
-    renderCartModal();
-    modalStageCart.style.display = "block";
-    modalStageReview.style.display = "none";
-    modalStageComplete.style.display = "none";
-    modalTitle.textContent = "Your shopping bag";
-    modalDesc.textContent = "Demo checkout · " + getCartTotalItems() + " items · Sample prices";
-    bagModal.style.display = "flex";
-  }
-
-  function closeBagModal() {
-    bagModal.style.display = "none";
-  }
-
-  viewBagLink.addEventListener("click", openBagModal);
-  var topShopBagBtn = document.getElementById("shopBagHeaderBtn");
-  if (topShopBagBtn) {
-    topShopBagBtn.addEventListener("click", openBagModal);
-  }
-  modalCloseBtn.addEventListener("click", closeBagModal);
-  bagModal.addEventListener("click", function(e) {
-    if (e.target === bagModal) closeBagModal();
-  });
-
-  // Link header bag to open the modal
-  var headerBagLink = document.querySelector(".bag-link");
-  if (headerBagLink) {
-    headerBagLink.addEventListener("click", function(e) {
-      if (cart.length > 0) {
-        e.preventDefault();
-        openBagModal();
-      }
-    });
-  }
-
-  function renderCartModal() {
-    modalItemsList.innerHTML = "";
-    if (cart.length === 0) {
-      modalItemsList.innerHTML = '<div style="padding: 36px 0; text-align: center; color: #777;">Your bag is empty.</div>';
-      modalTotalAmount.textContent = "Rs 0.00";
-      proceedCheckoutBtn.disabled = true;
-      proceedCheckoutBtn.style.opacity = "0.5";
-      return;
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": csrfToken},
+        body: JSON.stringify({product_id: p.id, color: col.name, size: selectedSize, quantity: selectedQuantity})
+      });
+      var data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Unable to add this item.");
+      document.getElementById("headerBagCount").textContent = "(" + data.cart_count + ")";
+      sfNotice.textContent = selectedQuantity + " × " + p.name + " added to bag";
+      viewBagLink.textContent = "View bag (" + data.cart_count + ")";
+      viewBagLink.style.display = "inline-block";
+    } catch (error) {
+      sfNotice.textContent = error.message || "Connection failed. Please try again.";
+    } finally {
+      addToBagBtn.disabled = false;
     }
-
-    proceedCheckoutBtn.disabled = false;
-    proceedCheckoutBtn.style.opacity = "1";
-
-    cart.forEach(function(it, idx) {
-      var row = document.createElement("div");
-      row.className = "sf-modal-item";
-
-      var img = document.createElement("img");
-      img.className = "sf-item-img";
-      img.src = it.img;
-      img.alt = it.product;
-      img.style.filter = it.filter;
-
-      var info = document.createElement("div");
-      info.className = "sf-item-info";
-      info.innerHTML =
-        '<h4 class="sf-item-name">' + it.product + '</h4>' +
-        '<p class="sf-item-meta">' + it.color + ' · Size ' + it.size + '</p>' +
-        '<p class="sf-item-price">Rs ' + it.price.toLocaleString("en-US", { minimumFractionDigits: 2 }) + ' each</p>';
-
-      var actions = document.createElement("div");
-      actions.className = "sf-item-actions";
-
-      var minusBtn = document.createElement("button");
-      minusBtn.className = "sf-qty-btn";
-      minusBtn.textContent = "−";
-      minusBtn.disabled = it.quantity <= 1;
-      minusBtn.addEventListener("click", function() {
-        if (it.quantity > 1) {
-          it.quantity--;
-          renderCartModal();
-          updateCartCount();
-        }
-      });
-
-      var qSpan = document.createElement("span");
-      qSpan.className = "sf-qty-num";
-      qSpan.textContent = it.quantity;
-
-      var plusBtn = document.createElement("button");
-      plusBtn.className = "sf-qty-btn";
-      plusBtn.textContent = "+";
-      plusBtn.addEventListener("click", function() {
-        it.quantity++;
-        renderCartModal();
-        updateCartCount();
-      });
-
-      var delBtn = document.createElement("button");
-      delBtn.className = "sf-item-del-btn";
-      delBtn.setAttribute("aria-label", "Remove item");
-      delBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
-      delBtn.addEventListener("click", function() {
-        cart.splice(idx, 1);
-        renderCartModal();
-        updateCartCount();
-      });
-
-      actions.appendChild(minusBtn);
-      actions.appendChild(qSpan);
-      actions.appendChild(plusBtn);
-      actions.appendChild(delBtn);
-
-      var subtotal = document.createElement("div");
-      subtotal.style.marginTop = "8px";
-      subtotal.style.fontWeight = "600";
-      subtotal.style.fontSize = "13.5px";
-      subtotal.textContent = "Rs " + (it.price * it.quantity).toLocaleString("en-US", { minimumFractionDigits: 2 });
-
-      info.appendChild(actions);
-      info.appendChild(subtotal);
-
-      row.appendChild(img);
-      row.appendChild(info);
-      modalItemsList.appendChild(row);
-    });
-
-    var total = getCartTotalPrice();
-    modalTotalAmount.textContent = "Rs " + total.toLocaleString("en-US", { minimumFractionDigits: 2 });
-    modalDesc.textContent = "Demo checkout · " + getCartTotalItems() + " items · Sample prices";
-  }
-
-  // Checkout flow
-  proceedCheckoutBtn.addEventListener("click", function() {
-    modalStageCart.style.display = "none";
-    modalStageReview.style.display = "block";
-    modalTitle.textContent = "Review your order";
-    modalDesc.textContent = "Review selections before placing demo order";
   });
-
-  backToBagBtn.addEventListener("click", function() {
-    modalStageReview.style.display = "none";
-    modalStageCart.style.display = "block";
-    modalTitle.textContent = "Your shopping bag";
-  });
-
-  placeDemoOrderBtn.addEventListener("click", function() {
-    // Notify backend
-    try {
-      fetch("/api/cart/demo-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: cart.map(function(it) {
-            return {
-              product: it.product,
-              color: it.color,
-              size: it.size,
-              quantity: it.quantity,
-              price: it.price
-            };
-          })
-        })
-      }).catch(function() {});
-    } catch (_) {}
-
-    cart = [];
-    updateCartCount();
-
-    modalStageReview.style.display = "none";
-    modalStageComplete.style.display = "block";
-    modalTitle.textContent = "Demo order complete";
-    modalDesc.textContent = "No payment was taken and no real order was placed.";
-  });
-
-  completeDoneBtn.addEventListener("click", closeBagModal);
 })();
 </script>
 {% endblock %}

@@ -26,7 +26,9 @@
       <a href="{{ url_for('shop_page') }}" class="{% if request.url.path == '/shop' %}nav-active{% endif %}">Shop</a>
       <a href="{{ url_for('about_page') }}" class="{% if request.url.path == '/about' %}nav-active{% endif %}">About</a>
       <a href="{{ url_for('contact_page') }}" class="{% if request.url.path == '/contact' %}nav-active{% endif %}">Contact</a>
-      {% if current_user and not current_user.is_admin_like %}<a href="{{ url_for('order_history') }}">Your orders</a>{% endif %}
+      {% if current_user and current_user.role == 'customer' %}<a href="{{ url_for('order_history') }}">Your orders</a>{% endif %}
+      {% if current_user and current_user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='crm') }}">Agent workspace</a>{% endif %}
+      {% if current_user %}<a href="{{ url_for('account_profile') }}">Profile</a>{% endif %}
       {% if current_user and current_user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">Studio</a>{% endif %}
     </nav>
     <div class="header-actions">

@@ -321,7 +321,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Check URL hash to open drawer automatically e.g. #order-3 or #order-drawer-3
   if (window.location.hash) {
-    const orderMatch = window.location.hash.match(/#order-(?:drawer-)?(\d+)/);
+    const orderMatch = window.location.hash.match(/#order-(?:(?:drawer|row)-)?(\d+)/);
     if (orderMatch && orderMatch[1]) {
       const orderId = orderMatch[1];
       // If we are on /admin/orders open the drawer, otherwise highlight the table row

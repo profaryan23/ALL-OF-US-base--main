@@ -1,0 +1,18 @@
+{% extends "admin_base.html" %}
+{% block module_title %}Checkout settings{% endblock %}
+{% block module_heading %}Payment & order communication{% endblock %}
+{% block module_content %}
+<section class="admin-section">
+  <p>These settings are stored in the database. Upload your actual payment QR and enter your business profile links. Blank options are hidden from checkout.</p>
+  <form method="post" enctype="multipart/form-data" class="checkout-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Payment QR image (JPEG, PNG or WebP)<input type="file" name="photo" accept="image/jpeg,image/png,image/webp"></label>
+    {% if settings.qr_photo_path %}<img class="payment-qr" src="{{ url_for('static', filename=settings.qr_photo_path) }}" alt="Current payment QR"><label><input type="checkbox" name="remove_qr"> Remove QR</label>{% endif %}
+    <label>Payment instructions<textarea name="payment_instructions" maxlength="2000">{{ settings.payment_instructions }}</textarea></label>
+    {% for field, label in [('whatsapp', 'WhatsApp (https://wa.me/...)'), ('instagram', 'Instagram'), ('facebook', 'Facebook'), ('tiktok', 'TikTok')] %}
+    <label>{{ label }}<input type="url" name="{{ field }}" maxlength="255" value="{{ settings|attr(field) }}" placeholder="https://"></label>
+    {% endfor %}
+    <button class="button button-dark" type="submit">Save payment & contact settings</button>
+  </form>
+</section>
+{% endblock %}

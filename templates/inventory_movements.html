@@ -1,0 +1,49 @@
+<section class="admin-section module-section" id="stock-movements">
+  <div class="admin-section-head"><div><p class="eyebrow">Inventory ledger</p><h2>Stock movement details</h2>
+    <p class="report-note">Stock-in, stock-out and vendor receipts in units. Dates are UTC; weeks start Monday. Existing inventory is an opening balance, not a vendor receipt. Sales from agent-held allocations do not deduct store stock a second time.</p>
+  </div></div>
+  <form method="get" action="{{ url_for('admin_inventory') }}#stock-movements" class="period-filter">
+    <label>From <input type="date" name="start" value="{{ movement_start }}" required></label>
+    <label>To <input type="date" name="end" value="{{ movement_end }}" required></label>
+    <label>Group by <select name="group">{% for option in ['daily', 'weekly', 'monthly'] %}<option value="{{ option }}" {% if movement_group == option %}selected{% endif %}>{{ option|title }}</option>{% endfor %}</select></label>
+    <label>Product <select name="product_id"><option value="0">All products</option>{% for product in products %}<option value="{{ product.id }}" {% if movement_product_id == product.id %}selected{% endif %}>{{ product.name }}</option>{% endfor %}</select></label>
+    <button class="save-button" type="submit">View movements</button>
+  </form>
+  <div class="table-wrap"><table><thead><tr><th>Current store stock</th><th>Stock-in (selected dates)</th><th>Stock-out (selected dates)</th><th>From vendors (selected dates)</th><th>Total received from vendors (all time)</th></tr></thead>
+    <tbody><tr><td>{{ current_stock }}</td><td>{{ movement_totals.stock_in }}</td><td>{{ movement_totals.stock_out }}</td><td>{{ movement_totals.vendor_in }}</td><td>{{ vendor_total }}</td></tr></tbody></table></div>
+  <p class="report-note">Opening before range: {{ movement_opening }} · Opening balances introduced in range: {{ movement_totals.opening_added }} · Closing at end of range: {{ movement_closing }}. Opening balances are excluded from stock-in totals. Vendor receipts are included in stock-in; vendor totals are gross receipts, not net of returns. Current stock is live and may differ from the selected period's closing stock.</p>
+
+  <h3>Record stock-in / stock-out</h3>
+  <form method="post" action="{{ url_for('create_stock_movement') }}" class="detail-edit-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="detail-form-grid">
+      <label>Product<select name="product_id" required>{% for product in products %}<option value="{{ product.id }}">{{ product.name }} ({{ product.stock_quantity }} available)</option>{% endfor %}</select></label>
+      <label>Movement<select name="reason" required>{% for reason in ['Vendor receipt', 'Customer return', 'Other stock-in', 'Vendor return', 'Damaged stock', 'Other stock-out'] %}<option>{{ reason }}</option>{% endfor %}</select></label>
+      <label>Quantity (units)<input name="quantity" type="number" min="1" max="1000000" step="1" required></label>
+      <label>Vendor (required for vendor receipts / returns)<input name="vendor" maxlength="140"></label>
+      <label>Invoice / reference<input name="reference" maxlength="140"></label>
+      <label>Notes<textarea name="notes" maxlength="1000" rows="2"></textarea></label>
+    </div>
+    <p class="report-note">Recorded at the current time. Use a customer return only when goods are physically returned; cancelling an order alone does not restock inventory. Use this form for vendor deliveries rather than overwriting the product balance.</p>
+    <button class="save-button" type="submit" {% if not products %}disabled{% endif %}>Save stock movement</button>
+  </form>
+
+  <h3>{{ movement_group|title }} stock summary</h3>
+  <div class="table-wrap"><table><thead><tr><th>Period starts</th><th>Opening</th><th>Opening introduced</th><th>Stock-in</th><th>Stock-out</th><th>From vendors</th><th>Closing</th></tr></thead><tbody>
+    {% for row in movement_rows %}<tr><td>{{ row.period }}</td><td>{{ row.opening }}</td><td>{{ row.opening_added }}</td><td>{{ row.stock_in }}</td><td>{{ row.stock_out }}</td><td>{{ row.vendor_in }}</td><td>{{ row.closing }}</td></tr>
+    {% else %}<tr><td colspan="7">No movements in this date range.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>Vendor receipts — selected dates</h3>
+  <div class="table-wrap"><table><thead><tr><th>Vendor</th><th>Total units received</th></tr></thead><tbody>
+    {% for vendor, quantity in vendor_rows %}<tr><td>{{ vendor }}</td><td>{{ quantity }}</td></tr>{% else %}<tr><td colspan="2">No vendor receipts recorded in this range.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3>Movement history</h3>
+  <div class="table-wrap"><table><thead><tr><th>Date (UTC)</th><th>Product</th><th>Reason</th><th>Stock-in</th><th>Stock-out</th><th>Balance after</th><th>Vendor / reference</th><th>Recorded by / notes</th></tr></thead><tbody>
+    {% for movement in movements %}<tr><td>{{ movement.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ movement.product_name }}{% if not movement.product_id %} (removed){% endif %}</td><td>{{ movement.reason }}</td><td>{{ movement.quantity if movement.quantity > 0 else '—' }}</td><td>{{ -movement.quantity if movement.quantity < 0 else '—' }}</td><td>{{ movement.balance_after }}</td><td>{{ movement.vendor or '—' }}<small>{{ movement.reference }}</small></td><td>{{ movement.actor_name }}<small>{{ movement.notes }}</small></td></tr>
+    {% else %}<tr><td colspan="8">No movements recorded.</td></tr>{% endfor %}
+  </tbody></table></div>
+  <p>History page {{ movement_page }} of {{ movement_page_count }} (50 entries per page).
+    {% if movement_page > 1 %}<a href="{{ movement_previous }}">← Newer</a>{% endif %}
+    {% if movement_page < movement_page_count %}<a href="{{ movement_next }}">Older →</a>{% endif %}
+  </p>
+</section>
