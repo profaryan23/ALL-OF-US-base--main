@@ -72,6 +72,12 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 PRODUCT_IMAGE_DIR = Path(os.environ.get("PRODUCT_IMAGE_DIR", "static/product-images"))
 MAX_PRODUCT_IMAGE_SIZE = 10 * 1024 * 1024
 
+STORE_PHONE = os.environ.get("STORE_PHONE", "+977 9800000000")
+STORE_WHATSAPP = os.environ.get("STORE_WHATSAPP", "9779800000000")
+SOCIAL_INSTAGRAM = os.environ.get("SOCIAL_INSTAGRAM", "https://instagram.com")
+SOCIAL_FACEBOOK = os.environ.get("SOCIAL_FACEBOOK", "https://facebook.com")
+SOCIAL_TIKTOK = os.environ.get("SOCIAL_TIKTOK", "https://tiktok.com")
+
 
 def initialize_product_image_directory():
     global PRODUCT_IMAGE_DIR
@@ -972,6 +978,11 @@ def template_context(request: Request):
         "selected_agent": request.query_params.get("agent_id", ""),
         "admin_pending_orders_count": admin_pending_orders_count,
         "admin_order_notifications": admin_order_notifications,
+        "store_phone": STORE_PHONE,
+        "store_whatsapp": STORE_WHATSAPP,
+        "social_instagram": SOCIAL_INSTAGRAM,
+        "social_facebook": SOCIAL_FACEBOOK,
+        "social_tiktok": SOCIAL_TIKTOK,
     }
 
 
@@ -1407,39 +1418,61 @@ async def api_cart_add(request: Request, db: Annotated[Session, Depends(get_db)]
     return {"success": True, "cart_count": total_count}
 
 
+@app.post("/api/cart/place-order")
 @app.post("/api/cart/demo-order")
-async def api_cart_demo_order(request: Request, db: Annotated[Session, Depends(get_db)]):
+async def api_cart_place_order(request: Request, db: Annotated[Session, Depends(get_db)]):
     data = await request.json()
     items = data.get("items", [])
     if not items:
-        return {"success": False, "detail": "Empty items"}
+        return JSONResponse(status_code=400, content={"success": False, "detail": "Your bag is empty."})
+
+    name = str(data.get("name", "")).strip() or "Valued Customer"
+    phone = str(data.get("phone", "")).strip()
+    address = str(data.get("address", "")).strip()
+    city = str(data.get("city", "")).strip() or "Kathmandu"
+    notes = str(data.get("notes", "")).strip()
+    payment_method = str(data.get("payment_method", "Cash on Delivery")).strip() or "Cash on Delivery"
 
     user_id = request.session.get("user_id")
     user = db.get(User, user_id) if user_id else None
-    if not user:
-        visitor_email = "visitor@allofus.store"
-        user = db.query(User).filter_by(email=visitor_email).first()
+    if user:
+        if phone and not user.phone:
+            user.phone = phone
+    else:
+        clean_digits = re.sub(r'[^0-9]', '', phone)
+        if not clean_digits:
+            clean_digits = secrets.token_hex(4)
+        guest_email = f"guest.{clean_digits}@allofus.store"
+        user = db.query(User).filter((User.phone == phone) | (User.email == guest_email)).first()
         if not user:
+            name_parts = name.split(maxsplit=1)
+            first_name = name_parts[0] if name_parts else "Store"
+            last_name = name_parts[1] if len(name_parts) > 1 else "Visitor"
             user = User(
-                email=visitor_email,
-                first_name="Store",
-                last_name="Visitor",
-                password_hash=hash_password("visitor123"),
+                first_name=first_name,
+                last_name=last_name,
+                email=guest_email,
+                phone=phone,
+                password_hash=hash_password(secrets.token_hex(16)),
                 role="customer",
+                is_active=True,
             )
             db.add(user)
             db.flush()
 
     total_amount = Decimal("0.00")
+    shipping_details = f"{name} | Tel: {phone} | {address}, {city}"
+    if notes:
+        shipping_details += f" | Notes: {notes}"
+
     order = Order(
         user_id=user.id,
         total_amount=Decimal("0.00"),
-        shipping_method="Standard",
-        shipping_fee=Decimal("0.00"),
-        address_line1="Storefront Visitor",
-        city="Storefront",
-        postal_code="10001",
         status="Pending",
+        channel="Online Store",
+        shipping_address=shipping_details[:300],
+        promo_code=payment_method[:50],
+        carrier="Direct Delivery",
     )
     db.add(order)
     db.flush()
@@ -1454,12 +1487,14 @@ async def api_cart_demo_order(request: Request, db: Annotated[Session, Depends(g
         prod = db.query(Product).filter_by(name=p_name).first()
         prod_id = prod.id if prod else 1
         unit_price = prod.price if prod else p_price
+        if prod and prod.stock_quantity >= p_qty:
+            prod.stock_quantity -= p_qty
 
         order_item = OrderItem(
             order_id=order.id,
             product_id=prod_id,
             quantity=p_qty,
-            unit_price=unit_price,
+            price_at_purchase=unit_price,
             size_variation=p_size,
             color_variation=p_color,
         )
@@ -1469,17 +1504,29 @@ async def api_cart_demo_order(request: Request, db: Annotated[Session, Depends(g
     order.total_amount = total_amount
     request.session["cart"] = {}
 
-    log_entry = ActivityLog(
+    create_activity_log(
+        db,
+        actor=user,
+        module="orders",
         action="order_placed",
-        user_id=user.id,
         entity_type="order",
         entity_id=order.id,
-        details=f"Visitor order #{order.id} placed for Rs {total_amount:.2f}",
+        details=f"New Order #{order.id:04d} placed by {name} (Phone: {phone}) for Rs {total_amount:.2f} via {payment_method}.",
     )
-    db.add(log_entry)
     db.commit()
+    track_event(db, request, "purchase")
 
-    return {"success": True, "order_id": order.id, "total": float(total_amount)}
+    return {
+        "success": True,
+        "order_id": order.id,
+        "order_number": f"#{order.id:04d}",
+        "total": float(total_amount),
+        "total_formatted": f"Rs {total_amount:,.2f}",
+        "customer_name": name,
+        "customer_phone": phone,
+        "customer_address": f"{address}, {city}",
+        "payment_method": payment_method,
+    }
 
 
 @app.get("/cart", name="cart_view", response_class=HTMLResponse)
@@ -1532,11 +1579,46 @@ async def update_cart(request: Request, db: Annotated[Session, Depends(get_db)])
 
 
 @app.post("/checkout", name="checkout", dependencies=[Depends(verify_csrf)])
-def checkout(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+async def checkout(request: Request, db: Annotated[Session, Depends(get_db)]):
     cart = request.session.get("cart", {})
     if not cart:
         request.session["flash"] = ["error", "Your bag is empty."]
         return safe_redirect(request, "cart_view")
+
+    form = await request.form()
+    user_id = request.session.get("user_id")
+    user = db.get(User, user_id) if user_id else None
+
+    name = str(form.get("name", "")).strip() or "Valued Customer"
+    phone = str(form.get("phone", "")).strip()
+    address = str(form.get("address", "")).strip()
+    city = str(form.get("city", "")).strip() or "Kathmandu"
+    notes = str(form.get("notes", "")).strip()
+    payment_method = str(form.get("payment_method", "Cash on Delivery")).strip() or "Cash on Delivery"
+
+    if user:
+        if phone and not user.phone:
+            user.phone = phone
+    else:
+        clean_digits = re.sub(r'[^0-9]', '', phone) or secrets.token_hex(4)
+        guest_email = f"guest.{clean_digits}@allofus.store"
+        user = db.query(User).filter((User.phone == phone) | (User.email == guest_email)).first()
+        if not user:
+            name_parts = name.split(maxsplit=1)
+            first_name = name_parts[0] if name_parts else "Store"
+            last_name = name_parts[1] if len(name_parts) > 1 else "Visitor"
+            user = User(
+                first_name=first_name,
+                last_name=last_name,
+                email=guest_email,
+                phone=phone,
+                password_hash=hash_password(secrets.token_hex(16)),
+                role="customer",
+                is_active=True,
+            )
+            db.add(user)
+            db.flush()
+
     validated = []
     product_quantities = {}
     total = Decimal("0.00")
@@ -1565,7 +1647,20 @@ def checkout(request: Request, user: Annotated[User, Depends(require_user)], db:
             return safe_redirect(request, "cart_view")
         validated.append((product, quantity, size, color))
         total += product.price * quantity
-    order = Order(user_id=user.id, total_amount=total, status="Pending")
+
+    shipping_details = f"{name} | Tel: {phone} | {address}, {city}"
+    if notes:
+        shipping_details += f" | Notes: {notes}"
+
+    order = Order(
+        user_id=user.id,
+        total_amount=total,
+        status="Pending",
+        channel="Online Store",
+        shipping_address=shipping_details[:300],
+        promo_code=payment_method[:50],
+        carrier="Direct Delivery",
+    )
     db.add(order)
     for product, quantity, size, color in validated:
         order.items.append(OrderItem(
@@ -1582,13 +1677,18 @@ def checkout(request: Request, user: Annotated[User, Depends(require_user)], db:
         action="order_placed",
         entity_type="order",
         entity_id=order.id,
-        details=f"New order #{order.id:04d} placed by visitor {user.first_name} {user.last_name} ({user.email}) for Rs {total:.2f}.",
+        details=f"New order #{order.id:04d} placed by {user.first_name} {user.last_name} ({phone}) for Rs {total:.2f} via {payment_method}.",
     )
     db.commit()
     track_event(db, request, "purchase")
     request.session.pop("cart", None)
-    request.session["flash"] = ["success", "Order placed. Thanks for gathering with us."]
-    return safe_redirect(request, "order_history")
+    
+    if request.session.get("user_id"):
+        request.session["flash"] = ["success", f"Order #{order.id:04d} placed successfully. Thanks for gathering with us."]
+        return safe_redirect(request, "order_history")
+    else:
+        request.session["flash"] = ["success", f"Order #{order.id:04d} placed successfully! We will call or WhatsApp you at {phone} to confirm delivery."]
+        return safe_redirect(request, "storefront")
 
 
 @app.get("/account/orders", name="order_history", response_class=HTMLResponse)
