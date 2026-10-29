@@ -10,6 +10,21 @@
 {% for p in products %}
   {% set prod_colors = product_colors(p) %}
   {% set prod_sizes = (p.size_variations.split(',')|map('trim')|reject('equalto', '')|list) if p.size_variations else (['28', '29', '30', '31', '32', '33', '34'] if (p.category or '')|lower in ['bottoms', 'pants', 'jeans'] else ['M', 'L', 'XL']) %}
+  {% set color_list = [] %}
+  {% for col in prod_colors %}
+    {% set col_photo = url_for('static', filename=col.photo_path) if col.photo_path else (url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png')) %}
+    {% set _ = color_list.append({
+      'name': col.name,
+      'hex': col.hex or col.swatch or '#222222',
+      'photo_path': col.photo_path or '',
+      'img': col_photo,
+      'filter': col.filter or 'none'
+    }) %}
+  {% endfor %}
+  {% if not color_list %}
+    {% set base_img = url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png') %}
+    {% set color_list = [{'name': 'Original', 'hex': '#222222', 'photo_path': p.photo_path or '', 'img': base_img, 'filter': 'none'}] %}
+  {% endif %}
   {% set _ = products_data.append({
     'id': p.id,
     'name': p.name,
@@ -18,7 +33,7 @@
     'img': url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png'),
     'description': p.description or '',
     'sizes': prod_sizes,
-    'colors': prod_colors if prod_colors else [{'name': 'Original', 'hex': '#222222', 'filter': 'none'}],
+    'colors': color_list,
     'stock': p.stock_quantity
   }) %}
 {% endfor %}
@@ -302,15 +317,19 @@
     });
 
     var p = products[index];
-    var col = p.colors[selectedColorIndex] || { name: "Original", hex: "#222222", filter: "none" };
+    var col = p.colors[selectedColorIndex] || p.colors[0] || { name: "Original", hex: "#222222", filter: "none" };
 
     // Update Center Pop
     centerHint.style.display = "none";
     centerPop.style.display = "flex";
     centerPop.style.background = pastelTints[index % pastelTints.length];
-    centerImg.src = p.img;
-    centerImg.alt = p.name;
-    centerImg.style.filter = col.filter || "none";
+    centerImg.src = col.img || p.img;
+    centerImg.alt = p.name + " - " + col.name;
+    if (col.photo_path) {
+      centerImg.style.filter = "none";
+    } else {
+      centerImg.style.filter = col.filter || "none";
+    }
 
     // Show details
     productDetails.style.display = "block";
@@ -325,14 +344,24 @@
     p.colors.forEach(function(c, cIdx) {
       var swatchBtn = document.createElement("button");
       swatchBtn.type = "button";
-      swatchBtn.className = "sf-swatch-btn" + (cIdx === 0 ? " swatch-active" : "");
+      swatchBtn.className = "sf-swatch-btn" + (cIdx === selectedColorIndex ? " swatch-active" : "");
       swatchBtn.style.background = c.hex || "#222222";
       swatchBtn.setAttribute("aria-label", c.name);
       swatchBtn.title = c.name;
       swatchBtn.addEventListener("click", function() {
         selectedColorIndex = cIdx;
         detailColorName.textContent = c.name;
-        centerImg.style.filter = c.filter || "none";
+        if (c.img) {
+          centerImg.src = c.img;
+        } else if (p.img) {
+          centerImg.src = p.img;
+        }
+        centerImg.alt = p.name + " - " + c.name;
+        if (c.photo_path) {
+          centerImg.style.filter = "none";
+        } else {
+          centerImg.style.filter = c.filter || "none";
+        }
         var allSwatches = detailSwatches.querySelectorAll(".sf-swatch-btn");
         allSwatches.forEach(function(sb, si) {
           if (si === cIdx) sb.classList.add("swatch-active");
@@ -402,7 +431,7 @@
   addToBagBtn.addEventListener("click", function() {
     if (!selectedSize || activeProductIndex === null) return;
     var p = products[activeProductIndex];
-    var col = p.colors[selectedColorIndex] || { name: "Original", hex: "#222222", filter: "none" };
+    var col = p.colors[selectedColorIndex] || p.colors[0] || { name: "Original", hex: "#222222", filter: "none" };
 
     var itemKey = p.name + ":" + col.name + ":" + selectedSize;
     var existing = cart.find(function(it) { return it.key === itemKey; });
@@ -416,8 +445,8 @@
         size: selectedSize,
         price: p.price,
         quantity: selectedQuantity,
-        img: p.img,
-        filter: col.filter || "none"
+        img: col.img || p.img,
+        filter: col.photo_path ? "none" : (col.filter || "none")
       });
     }
 

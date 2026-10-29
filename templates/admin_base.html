@@ -36,31 +36,9 @@
       </form>
     </div>
 
-    <!-- SECTION: Public Store Links (Exact Match to Reference Screenshot) -->
+    <!-- SECTION 1: STUDIO BACK-OFFICE MODULES -->
     <div class="sidebar-nav-section">
-      <div class="sidebar-section-heading">PUBLIC STORE LINKS</div>
-      <nav class="sidebar-section-nav module-nav" aria-label="Public Store Links">
-        <a href="{{ url_for('shop_page') }}" class="nav-item" target="_blank" rel="noopener">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
-          <span class="nav-text">Shop</span>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-        </a>
-        <a href="{{ url_for('about_page') }}" class="nav-item" target="_blank" rel="noopener">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-          <span class="nav-text">About</span>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-        </a>
-        <a href="{{ url_for('contact_page') }}" class="nav-item" target="_blank" rel="noopener">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-          <span class="nav-text">Contact</span>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
-        </a>
-      </nav>
-    </div>
-
-    <!-- SECTION: Studio Back-Office Modules -->
-    <div class="sidebar-nav-section">
-      <div class="sidebar-section-heading">STUDIO BACK-OFFICE MODULES</div>
+      <div class="sidebar-section-heading">STUDIO MODULES</div>
       <nav class="sidebar-section-nav module-nav" aria-label="Studio Back-Office Modules">
         <a href="{{ url_for('admin_dashboard') }}" class="nav-item {% if active_module == 'overview' %}active{% endif %}">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -79,25 +57,9 @@
           <a href="{{ url_for('admin_content') }}?tab=messages" style="font-size: 11.5px; color: {% if active_tab == 'messages' %}#ffffff; font-weight: 600;{% else %}#a0aec0;{% endif %} text-decoration: none; padding: 2px 0;">• Inbox{% if unread_count and unread_count > 0 %} ({{ unread_count }}){% endif %}</a>
         </div>
         {% endif %}
-        <a href="{{ url_for('admin_crm') }}" class="nav-item {% if active_module == 'crm' %}active{% endif %}">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span class="nav-text">CRM</span>
-        </a>
-        <a href="{{ url_for('admin_rbac') }}" class="nav-item {% if active_module == 'rbac' %}active{% endif %}">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-          <span class="nav-text">RBAC</span>
-        </a>
         <a href="{{ url_for('admin_inventory') }}" class="nav-item {% if active_module == 'inventory' %}active{% endif %}">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
           <span class="nav-text">Inventory</span>
-        </a>
-        <a href="{{ url_for('admin_agents') }}" class="nav-item {% if active_module == 'agents' %}active{% endif %}">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-          <span class="nav-text">Agents</span>
-        </a>
-        <a href="{{ url_for('admin_sales') }}" class="nav-item {% if active_module == 'sales' %}active{% endif %}">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
-          <span class="nav-text">Sales</span>
         </a>
         <a href="{{ url_for('admin_orders') }}" class="nav-item {% if active_module == 'orders' %}active{% endif %}">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/></svg>
@@ -105,6 +67,14 @@
           {% if admin_pending_orders_count and admin_pending_orders_count > 0 %}
             <span class="sidebar-order-badge" title="{{ admin_pending_orders_count }} pending orders">{{ admin_pending_orders_count }}</span>
           {% endif %}
+        </a>
+        <a href="{{ url_for('admin_sales') }}" class="nav-item {% if active_module == 'sales' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          <span class="nav-text">Sales</span>
+        </a>
+        <a href="{{ url_for('admin_crm') }}" class="nav-item {% if active_module == 'crm' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="nav-text">CRM</span>
         </a>
         <a href="{{ url_for('admin_accounts') }}" class="nav-item {% if active_module == 'accounts' %}active{% endif %}">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
@@ -114,13 +84,50 @@
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>
           <span class="nav-text">Website analytics</span>
         </a>
+        <a href="{{ url_for('admin_reports') }}" class="nav-item {% if active_module == 'reports' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+          <span class="nav-text">Reports</span>
+        </a>
         <a href="{{ url_for('admin_activities') }}" class="nav-item {% if active_module == 'activities' %}active{% endif %}">
           <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
           <span class="nav-text">Activities</span>
         </a>
-        <a href="{{ url_for('admin_reports') }}" class="nav-item {% if active_module == 'reports' %}active{% endif %}">
-          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-          <span class="nav-text">Reports</span>
+      </nav>
+    </div>
+
+    <!-- SECTION 2: ACCESS & PARTNERS (USERS & AGENTS SEPARATED) -->
+    <div class="sidebar-nav-section">
+      <div class="sidebar-section-heading">USERS &amp; AGENTS</div>
+      <nav class="sidebar-section-nav module-nav" aria-label="Users and Agents">
+        <a href="{{ url_for('admin_rbac') }}" class="nav-item {% if active_module == 'rbac' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span class="nav-text">Users &amp; Roles</span>
+        </a>
+        <a href="{{ url_for('admin_agents') }}" class="nav-item {% if active_module == 'agents' %}active{% endif %}">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="7" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+          <span class="nav-text">Agents</span>
+        </a>
+      </nav>
+    </div>
+
+    <!-- SECTION 3: PUBLIC STORE LINKS -->
+    <div class="sidebar-nav-section">
+      <div class="sidebar-section-heading">PUBLIC STORE LINKS</div>
+      <nav class="sidebar-section-nav module-nav" aria-label="Public Store Links">
+        <a href="{{ url_for('shop_page') }}" class="nav-item" target="_blank" rel="noopener">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          <span class="nav-text">Shop</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+        </a>
+        <a href="{{ url_for('about_page') }}" class="nav-item" target="_blank" rel="noopener">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          <span class="nav-text">About</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
+        </a>
+        <a href="{{ url_for('contact_page') }}" class="nav-item" target="_blank" rel="noopener">
+          <svg class="nav-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          <span class="nav-text">Contact</span>
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-left: auto; opacity: 0.5;"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg>
         </a>
       </nav>
     </div>

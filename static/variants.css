@@ -1,12 +1,322 @@
-.variant-fieldset { border: 1px solid #d5d5d5; padding: 14px; margin: 10px 0; min-width: 0; }
-.variant-fieldset legend { font-weight: 600; padding: 0 6px; }
-.variant-fieldset p, .variant-fieldset small { font-size: 12px; margin-bottom: 10px; }
+.variant-fieldset { border: 1px solid #d5d5d5; padding: 14px; margin: 14px 0; min-width: 0; background: #fafaf8; border-radius: 4px; }
+.variant-fieldset legend { font-weight: 600; font-size: 13px; padding: 0 8px; color: #18181b; }
+.variant-fieldset p, .variant-fieldset small { font-size: 12px; margin-bottom: 10px; color: #52525b; line-height: 1.45; }
 .size-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .size-choice { position: relative; cursor: pointer; display: inline-flex !important; }
 .size-choice input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.size-choice span { display: inline-block; padding: 9px 12px; border: 1px solid #aaa; background: #fff; color: #111; }
-.size-choice input:checked + span { background: #111; color: #fff; border-color: #111; }
-.size-choice input:focus-visible + span { outline: 3px solid #5578aa; outline-offset: 2px; }
-.color-editor-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; margin: 10px 0; }
-.color-editor-row label { flex: 1; min-width: 100px; }
-.color-editor-row input { max-width: 100%; }
+.size-choice span { display: inline-block; padding: 8px 13px; border: 1px solid #d4d4d8; background: #fff; color: #111; font-size: 12px; font-weight: 500; border-radius: 3px; transition: all 0.15s ease; }
+.size-choice input:checked + span { background: #18181b; color: #fff; border-color: #18181b; }
+.size-choice input:focus-visible + span { outline: 2px solid #3b82f6; outline-offset: 2px; }
+
+/* Color Selection Bar Styles */
+.color-selection-fieldset {
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+}
+.color-editor-subtext {
+  font-size: 12px;
+  color: #71717a;
+  margin-bottom: 14px;
+}
+.color-selection-bar-wrap {
+  margin-bottom: 14px;
+}
+.color-bar-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
+  margin-bottom: 8px;
+}
+.color-presets-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.color-preset-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid #e4e4e7;
+  background: #f4f4f5;
+  color: #18181b;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.color-preset-pill:hover {
+  background: #e4e4e7;
+  border-color: #d4d4d8;
+  transform: translateY(-1px);
+}
+.preset-swatch {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.15);
+}
+
+/* Custom Color Adder Bar */
+.custom-color-adder-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+}
+.custom-color-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.custom-color-picker-input {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+}
+.custom-color-name-input {
+  flex: 1;
+  height: 32px;
+  padding: 4px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.btn-add-custom-color {
+  white-space: nowrap;
+}
+
+/* Configured Colors List */
+.active-colors-container {
+  margin-top: 14px;
+}
+.active-colors-header {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #52525b;
+  margin-bottom: 10px;
+}
+.color-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.color-editor-card {
+  background: #fbfbfa;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  padding: 11px 13px;
+  transition: border-color 0.15s ease;
+}
+.color-editor-card:hover {
+  border-color: #a1a1aa;
+}
+.color-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.color-card-swatch-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.color-swatch-badge {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.18);
+  display: block;
+}
+.color-hex-picker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+  cursor: pointer;
+}
+.color-card-name-wrap {
+  flex: 1;
+}
+.color-name-input {
+  width: 100%;
+  height: 32px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  background: #ffffff;
+}
+.button-remove-color {
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+}
+.button-remove-color:hover {
+  background: #fee2e2;
+}
+
+/* Photo row inside color card */
+.color-card-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #f0f0f2;
+}
+.color-photo-thumb-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #e4e4e7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid #d4d4d8;
+}
+.color-photo-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.empty-thumb {
+  font-size: 9px;
+  color: #a1a1aa;
+  text-align: center;
+}
+.color-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+}
+.photo-status-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.photo-status-tag.empty {
+  background: #f4f4f5;
+  color: #71717a;
+  border-color: #e4e4e7;
+}
+.btn-file-subtle {
+  display: inline-block;
+  cursor: pointer;
+  padding: 4px 9px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #334155;
+}
+.btn-file-subtle input[type=file] {
+  display: none;
+}
+.btn-file-subtle:hover {
+  background: #f1f5f9;
+}
+.remove-photo-checkbox {
+  font-size: 11px;
+  color: #dc2626;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+/* Storefront Preview Box Color Swatches Bar */
+.preview-colors-row {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(0,0,0,0.1);
+}
+.preview-colors-row small {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #64748b;
+  margin-bottom: 6px;
+}
+.preview-swatches-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.preview-swatch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #d4d4d8;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 11px;
+  color: #18181b;
+  transition: all 0.15s ease;
+}
+.preview-swatch-chip:hover,
+.preview-swatch-chip.active {
+  border-color: #000000;
+  background: #f4f4f5;
+  font-weight: 600;
+}
+.preview-swatch-chip .swatch-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+
+/* Table Color Dots in Inventory List */
+.table-color-dots {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 4px;
+}
+.table-color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(0,0,0,0.2);
+}

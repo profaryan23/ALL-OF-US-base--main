@@ -141,8 +141,8 @@ async def read_product_colors(form, product=None):
     if len(names) > 20:
         raise ValueError("Use no more than 20 colors per product.")
     existing = {c["name"]: c for c in product_colors(product)} if product else {}
+    hex_values = form.getlist("color_hex")
     colors, seen = [], set()
-    # Validate every image before writing any files.
     images = []
     for index, raw_name in enumerate(names):
         name = str(raw_name).strip()
@@ -152,7 +152,27 @@ async def read_product_colors(form, product=None):
             raise ValueError("Color names must be unique and at most 60 characters.")
         seen.add(name.casefold())
         photo = await read_product_image({"photo": form.get(f"color_photo_{index}")})
-        colors.append({"name": name, "photo_path": existing.get(name, {}).get("photo_path", "")})
+
+        hex_code = ""
+        if form.get(f"color_hex_{index}"):
+            hex_code = str(form.get(f"color_hex_{index}")).strip()
+        elif index < len(hex_values) and hex_values[index]:
+            hex_code = str(hex_values[index]).strip()
+
+        existing_c = existing.get(name, {})
+        if not hex_code:
+            hex_code = existing_c.get("hex") or existing_c.get("swatch") or "#222222"
+
+        photo_path = form.get(f"color_existing_photo_{index}") or existing_c.get("photo_path", "")
+        if form.get(f"remove_color_photo_{index}") == "on":
+            photo_path = ""
+
+        colors.append({
+            "name": name,
+            "hex": hex_code,
+            "photo_path": photo_path,
+            "filter": existing_c.get("filter", "none")
+        })
         images.append(photo)
     for color, image in zip(colors, images):
         if image:

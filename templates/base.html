@@ -30,7 +30,7 @@
       {% if current_user and current_user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">Studio</a>{% endif %}
     </nav>
     <div class="header-actions">
-      {% if current_user %}{% if current_user.is_admin_like %}<a class="studio-link" href="{{ url_for('admin_dashboard') }}" style="font-weight: 600; text-decoration: underline;">Studio</a>{% endif %}<span class="welcome">Hi, {{ current_user.first_name }}</span><form method="post" action="{{ url_for('logout') }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Sign out</button></form>
+      {% if current_user %}<span class="welcome">Hi, {{ current_user.first_name }}</span><form method="post" action="{{ url_for('logout') }}" class="inline-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Sign out</button></form>
       {% else %}<a class="text-button" href="{{ url_for('login') }}">Sign in</a>{% endif %}
       <a class="bag-link" href="{{ url_for('cart_view') }}" aria-label="Shopping bag, {{ cart_count }} items">Bag <span>{{ cart_count }}</span></a>
     </div>

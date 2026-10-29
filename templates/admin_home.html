@@ -38,4 +38,15 @@
   <a class="module-card" href="{{ url_for('admin_analytics') }}"><span class="module-number">06</span><div><h2>Website analytics</h2><p>Visits, cart activity, conversion, and local technical SEO checks.</p></div><span class="module-arrow">↗</span></a>
   <a class="module-card" href="{{ url_for('admin_reports') }}"><span class="module-number">07</span><div><h2>Reports</h2><p>Combined sales, order, customer, inventory, and web activity snapshot.</p></div><span class="module-arrow">↗</span></a>
 </div>
+
+<div class="admin-section-head" style="margin-top: 36px;">
+  <div>
+    <p class="eyebrow">Access & Partner Network</p>
+    <h2>Users &amp; Agents</h2>
+  </div>
+</div>
+<div class="module-grid module-grid-secondary">
+  <a class="module-card" href="{{ url_for('admin_rbac') }}"><span class="module-number">08</span><div><h2>Users &amp; Roles (RBAC)</h2><p>Manage administrator, sales agent, and customer accounts, permissions, and RBAC matrix.</p></div><span class="module-arrow">↗</span></a>
+  <a class="module-card" href="{{ url_for('admin_agents') }}"><span class="module-number">09</span><div><h2>Agents Management</h2><p>Agent leaderboard, stock allocations, commission tracking, and sales logs.</p></div><span class="module-arrow">↗</span></a>
+</div>
 {% endblock %}

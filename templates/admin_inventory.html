@@ -47,6 +47,15 @@
               <td class="product-name-cell">
                 <strong>{{ product.name }}</strong>
                 <small>{{ product.shop_category }}</small>
+                {% set p_cols = product_colors(product) %}
+                {% if p_cols %}
+                  <div class="table-color-dots">
+                    {% for c in p_cols %}
+                      <span class="table-color-dot" style="background: {{ c.hex or c.swatch or '#222222' }};" title="{{ c.name }}"></span>
+                    {% endfor %}
+                    <small style="font-size: 10px; color: #71717a; margin-left: 3px;">{{ p_cols|length }} color{{ 's' if p_cols|length != 1 else '' }}</small>
+                  </div>
+                {% endif %}
               </td>
               <td><span class="category-pill">{{ product.category }}</span></td>
               <td class="product-price-cell">Rs {{ '%.2f'|format(product.price) }}</td>
@@ -189,9 +198,9 @@
           </div>
           <div class="preview-box-body">
             {% if product.photo_path %}
-              <img src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" class="detail-image-preview">
+              <img src="{{ url_for('static', filename=product.photo_path) }}" alt="{{ product.name }}" class="detail-image-preview" id="preview-img-{{ product.id }}">
             {% else %}
-              <div class="detail-image-empty">No product image uploaded</div>
+              <div class="detail-image-empty" id="preview-img-{{ product.id }}">No product image uploaded</div>
             {% endif %}
             <div class="preview-box-info">
               <span class="preview-cat-text">{{ product.category }} · {{ product.shop_category }}</span>
@@ -205,6 +214,23 @@
                   {% for s in product.size_variations.split(',') %}
                     {% if s.strip() %}<span class="preview-chip">{{ s.strip() }}</span>{% endif %}
                   {% endfor %}
+                </div>
+              {% endif %}
+              {% set pcolors = product_colors(product) %}
+              {% if pcolors %}
+                <div class="preview-colors-row">
+                  <small>Colors (click to switch photo):</small>
+                  <div class="preview-swatches-bar">
+                    {% for c in pcolors %}
+                      <button type="button" class="preview-swatch-chip" 
+                              data-preview-target="preview-img-{{ product.id }}"
+                              data-photo-url="{{ url_for('static', filename=c.photo_path) if c.photo_path else (url_for('static', filename=product.photo_path) if product.photo_path else '') }}"
+                              title="{{ c.name }}">
+                        <span class="swatch-dot" style="background: {{ c.hex or c.swatch or '#222222' }};"></span>
+                        <span class="swatch-name">{{ c.name }}</span>
+                      </button>
+                    {% endfor %}
+                  </div>
                 </div>
               {% endif %}
             </div>

@@ -1224,3 +1224,203 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
   object-fit: cover;
   object-position: center 25%;
 }
+
+
+/* ========================================================
+   Admin Panel Mobile & RBAC Enhancements (Preserves Desktop View)
+   ======================================================== */
+
+/* Role Badges */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 999px;
+  text-transform: capitalize;
+  letter-spacing: 0.02em;
+}
+.role-badge-admin, .role-badge-super_admin, .role-badge-developer {
+  background: #18181b;
+  color: #fef08a;
+  border: 1px solid #3f3f46;
+}
+.role-badge-agent {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.role-badge-customer {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+/* User Role Filter Bar */
+.user-role-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0 20px 0;
+}
+.role-filter-btn {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid #d4d4d8;
+  background: #ffffff;
+  color: #3f3f46;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.role-filter-btn:hover {
+  background: #f4f4f5;
+  border-color: #a1a1aa;
+}
+.role-filter-btn.active {
+  background: #18181b;
+  color: #ffffff;
+  border-color: #18181b;
+  font-weight: 600;
+}
+
+/* Mobile User Cards: Hidden on Desktop */
+.mobile-user-cards-list {
+  display: none;
+}
+
+/* Secondary Module Grid in Admin Home */
+.module-grid-secondary {
+  margin-top: 16px;
+}
+
+/* Mobile View UI Scoped Styles (<= 768px) */
+@media (max-width: 768px) {
+  /* Admin Sidebar on Mobile */
+  .admin-sidebar {
+    padding: 16px 14px !important;
+    gap: 16px;
+  }
+  .sidebar-profile-card {
+    padding: 12px 14px !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 8px !important;
+    margin-bottom: 6px;
+  }
+  .sidebar-nav-section {
+    background: rgba(255, 255, 255, 0.03) !important;
+    border: 1px solid rgba(255, 255, 255, 0.07) !important;
+    border-radius: 8px !important;
+    padding: 12px 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .sidebar-section-heading {
+    font-size: 10.5px !important;
+    letter-spacing: 0.08em !important;
+    color: #94a3b8 !important;
+    margin-bottom: 10px !important;
+    padding-left: 4px;
+  }
+  .sidebar-section-nav {
+    display: grid !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 6px !important;
+  }
+  .sidebar-section-nav .nav-item {
+    padding: 10px 10px !important;
+    font-size: 11.5px !important;
+    min-height: 42px !important;
+    border-radius: 6px !important;
+    background: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+  }
+  .sidebar-section-nav .nav-item.active {
+    background: rgba(56, 189, 248, 0.12) !important;
+    border-color: rgba(56, 189, 248, 0.4) !important;
+    color: #38bdf8 !important;
+  }
+
+  /* Separate Users & Agents on Mobile */
+  .desktop-user-table {
+    display: none !important;
+  }
+  .mobile-user-cards-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+  .mobile-user-card {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    padding: 14px 16px !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+  }
+  .mobile-user-card-head {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    padding-bottom: 8px !important;
+  }
+  .mobile-user-name {
+    font-size: 14.5px !important;
+    display: block !important;
+    color: #0f172a !important;
+    margin-bottom: 4px !important;
+  }
+  .mobile-user-date {
+    font-size: 11px !important;
+    color: #64748b !important;
+    white-space: nowrap !important;
+  }
+  .mobile-user-card-body {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+  .mobile-user-meta {
+    font-size: 12.5px !important;
+    color: #334155 !important;
+    margin: 0 !important;
+    word-break: break-all !important;
+  }
+  .mobile-user-meta span {
+    color: #64748b !important;
+    font-weight: 500 !important;
+    margin-right: 4px !important;
+  }
+  .mobile-user-card-actions {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding-top: 6px !important;
+    border-top: 1px dashed #e2e8f0 !important;
+  }
+  .mobile-action-link {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    color: #0284c7 !important;
+    text-decoration: underline !important;
+  }
+  .badge-role-tag.admin-tag {
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    color: #854d0e !important;
+  }
+
+  /* Admin Main Pane on Mobile */
+  .admin-main-pane {
+    padding: 16px 14px 60px 14px !important;
+  }
+  .admin-section {
+    margin-bottom: 28px !important;
+  }
+}

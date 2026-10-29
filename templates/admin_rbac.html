@@ -70,18 +70,28 @@
       <h2>Current users</h2>
     </div>
   </div>
-  <div class="table-wrap">
+  
+  <!-- Role Filter Bar: Separates Admins, Agents, Customers -->
+  <div class="user-role-filter-bar">
+    <button type="button" class="role-filter-btn active" data-role-filter="all">All Accounts ({{ users|length }})</button>
+    <button type="button" class="role-filter-btn" data-role-filter="admin">Admins ({{ users|selectattr('role', 'equalto', 'admin')|list|length }})</button>
+    <button type="button" class="role-filter-btn" data-role-filter="agent">Agents ({{ users|selectattr('role', 'equalto', 'agent')|list|length }})</button>
+    <button type="button" class="role-filter-btn" data-role-filter="customer">Customers ({{ users|selectattr('role', 'equalto', 'customer')|list|length }})</button>
+  </div>
+
+  <!-- Desktop Table (Preserved for Desktop View) -->
+  <div class="table-wrap desktop-user-table">
     <table>
       <thead>
         <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Created</th></tr>
       </thead>
       <tbody>
         {% for user in users %}
-        <tr>
-          <td>{{ user.first_name }} {{ user.last_name }}</td>
+        <tr class="user-account-row" data-user-role="{{ user.role }}">
+          <td><strong>{{ user.first_name }} {{ user.last_name }}</strong></td>
           <td>{{ user.email }}</td>
           <td>{{ user.phone or 'No phone' }}</td>
-          <td>{{ role_labels.get(user.role, user.role) }}</td>
+          <td><span class="role-badge role-badge-{{ user.role }}">{{ role_labels.get(user.role, user.role) }}</span></td>
           <td>{{ user.created_at.strftime('%b %d, %Y') }}</td>
         </tr>
         {% else %}
@@ -90,5 +100,66 @@
       </tbody>
     </table>
   </div>
+
+  <!-- Mobile Cards View (Separates Admins, Agents, Customers with clean mobile cards) -->
+  <div class="mobile-user-cards-list">
+    {% for user in users %}
+    <div class="mobile-user-card" data-user-role="{{ user.role }}">
+      <div class="mobile-user-card-head">
+        <div>
+          <strong class="mobile-user-name">{{ user.first_name }} {{ user.last_name }}</strong>
+          <span class="role-badge role-badge-{{ user.role }}">{{ role_labels.get(user.role, user.role) }}</span>
+        </div>
+        <small class="mobile-user-date">{{ user.created_at.strftime('%b %d, %Y') }}</small>
+      </div>
+      <div class="mobile-user-card-body">
+        <p class="mobile-user-meta"><span>Email:</span> <a href="mailto:{{ user.email }}">{{ user.email }}</a></p>
+        <p class="mobile-user-meta"><span>Phone:</span> {{ user.phone or 'Not provided' }}</p>
+      </div>
+      <div class="mobile-user-card-actions">
+        {% if user.role in ['admin', 'super_admin', 'developer'] %}
+          <span class="badge-role-tag admin-tag">Studio Administrator</span>
+        {% elif user.role == 'agent' %}
+          <a href="{{ url_for('admin_agents') }}" class="mobile-action-link">View Agent Performance ↗</a>
+        {% else %}
+          <a href="{{ url_for('admin_crm') }}" class="mobile-action-link">View Customer in CRM ↗</a>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
 </section>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  var filterBtns = document.querySelectorAll('.role-filter-btn');
+  filterBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      filterBtns.forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      var role = btn.dataset.roleFilter;
+
+      // Filter table rows
+      var rows = document.querySelectorAll('.user-account-row');
+      rows.forEach(function(r) {
+        if (role === 'all' || r.dataset.userRole === role) {
+          r.style.display = '';
+        } else {
+          r.style.display = 'none';
+        }
+      });
+
+      // Filter mobile cards
+      var cards = document.querySelectorAll('.mobile-user-card');
+      cards.forEach(function(c) {
+        if (role === 'all' || c.dataset.userRole === role) {
+          c.style.display = '';
+        } else {
+          c.style.display = 'none';
+        }
+      });
+    });
+  });
+});
+</script>
 {% endblock %}
