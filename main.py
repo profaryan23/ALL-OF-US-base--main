@@ -1820,7 +1820,7 @@ async def checkout(request: Request, db: Annotated[Session, Depends(get_db)]):
     phone = str(form.get("phone", "")).strip()
     address = str(form.get("address", "")).strip()
     notes = str(form.get("notes", "")).strip()
-    method = str(form.get("payment_method", ""))
+    method = str(form.get("payment_method", "Order now"))
     settings = checkout_settings(db)
     methods = available_payment_methods(settings)
     if not name or len(name) > 160 or not 7 <= len(re.sub(r"\D", "", phone)) <= 15 or len(phone) > 40 or not address or len(address) > 300 or len(notes) > 1000 or method not in methods:
@@ -1859,7 +1859,7 @@ async def checkout(request: Request, db: Annotated[Session, Depends(get_db)]):
 
 
 def available_payment_methods(settings):
-    methods = {}
+    methods = {"Order now": ""}
     if settings.qr_photo_path:
         methods["QR payment"] = ""
     for field, label in (("whatsapp", "WhatsApp"), ("instagram", "Instagram"), ("facebook", "Facebook"), ("tiktok", "TikTok")):

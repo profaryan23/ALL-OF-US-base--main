@@ -1,0 +1,52 @@
+/* Additive presentation layer: scoped to the inventory-backed Shop collection. */
+.shop-arc {
+  --sf-bg: #080808;
+  --sf-fg: #f1f1f1;
+  --sf-muted: #aaa;
+  --sf-border: #353535;
+  color: var(--sf-fg);
+  background: radial-gradient(ellipse at 50% 35%, #242222 0, #080808 65%);
+  padding-top: 24px;
+}
+.shop-arc .shop-header { margin-bottom: 24px; }
+.shop-arc .shop-title { font-family: var(--sans), sans-serif; font-weight: 400; letter-spacing: -.05em; }
+.shop-arc .arc-categories { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 24px auto; }
+.shop-arc .arc-categories button, .shop-arc .arc-toolbar button {
+  border: 1px solid #404040; border-radius: 24px; background: #ffffff08; color: #bbb;
+  padding: 10px 16px; font: inherit; font-size: 11px; cursor: pointer; transition: background .2s, color .2s;
+}
+.shop-arc .arc-categories button[aria-pressed="true"] { background: #eee; color: #111; border-color: #eee; }
+.shop-arc .arc-categories button:hover, .shop-arc .arc-toolbar button:hover { background: #555; color: #fff; }
+.shop-arc .arc-toolbar { display: flex; align-items: center; justify-content: space-between; max-width: 1000px; margin: auto; color: #aaa; font-size: 11px; }
+.shop-arc .orbit-stage { width: 100%; max-width: 1200px; height: 480px; aspect-ratio: auto; overflow: hidden; touch-action: pan-y; cursor: grab; }
+.shop-arc .orbit-stage:active { cursor: grabbing; }
+.shop-arc .orbit-ring, .shop-arc .orbit-center { display: none; }
+.shop-arc .orbit-center.arc-empty { display: flex; color: #ddd; background: transparent; border: 0; width: 100%; }
+.shop-arc .orbit { position: absolute; inset: 0; transform: none; animation: none; }
+.shop-arc .orbit-slot { position: absolute; left: 50% !important; top: 42% !important; width: 230px; height: 330px; margin: 0; will-change: transform; }
+.shop-arc .orbit-slot[hidden] { display: none; }
+.shop-arc .orbit-item {
+  position: relative; inset: auto; width: 100%; height: 100%; transform: none !important;
+  padding: 9px; border: 1px solid #ffffff24; border-radius: 22px; background: #202020d9 !important;
+  backdrop-filter: blur(20px); box-shadow: 0 24px 50px #0009; overflow: hidden; transition: border-color .2s, filter .2s;
+}
+.shop-arc .orbit-item:hover { filter: brightness(1.15); border-color: #ffffff80; }
+.shop-arc .orbit-item-active { border-color: #e2d3b0; box-shadow: 0 24px 60px #000, 0 0 35px #cdbb921a; }
+.shop-arc .orbit-item img { width: 100%; height: 100%; object-fit: cover; border-radius: 15px; pointer-events: none; }
+.shop-arc .orbit-label { position: absolute; left: 9px; right: 9px; bottom: 9px; top: auto; transform: none; width: auto; padding: 45px 14px 16px; background: linear-gradient(transparent, #000e); color: white; white-space: normal; text-align: left; font-size: 13px; border-radius: 0 0 15px 15px; }
+.shop-arc .arc-card-price { display: block; margin-top: 7px; color: #e2d3b0; font-size: 12px; }
+.shop-arc .sf-details { max-width: 850px; width: 100%; box-sizing: border-box; margin: 0 auto; padding: 28px; text-align: left; border: 1px solid #ffffff20; border-radius: 24px; background: #ffffff08; backdrop-filter: blur(24px); box-shadow: 0 20px 50px #0005; }
+.shop-arc .sf-product-name { color: #f1f1f1; font-family: var(--sans), sans-serif; }
+.shop-arc .sf-product-desc, .shop-arc .sf-price-note, .shop-arc .sf-color-label, .shop-arc .sf-sizes-legend, .shop-arc .sf-qty-label { color: #aaa; }
+.shop-arc .sf-product-price, .shop-arc .sf-view-bag-link, .shop-arc .sf-product-tag { color: #e2d3b0; }
+.shop-arc .sf-size-btn, .shop-arc .sf-qty-btn { color: #ddd; background: #ffffff08; border-color: #555; }
+.shop-arc .sf-size-btn.size-active { color: #111; background: #eee; }
+.shop-arc .sf-add-btn-enabled { background: #eee; color: #111; }
+.shop-arc .sf-header-bag-btn { color: #eee; background: #ffffff08; border-color: #444; }
+.shop-arc :is(button,a):focus-visible { outline: 2px solid #e2d3b0; outline-offset: 4px; }
+@media(max-width: 640px) {
+  .shop-arc .orbit-stage { height: 390px; }
+  .shop-arc .orbit-slot { width: 175px; height: 260px; }
+  .shop-arc .sf-details { padding: 20px; }
+}
+@media(prefers-reduced-motion: reduce) { .shop-arc * { transition: none !important; animation: none !important; } }

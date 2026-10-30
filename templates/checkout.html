@@ -13,9 +13,10 @@
       <label>Order notes (optional)<textarea name="notes" maxlength="1000"></textarea></label>
       <fieldset><legend>Choose payment or order communication</legend>
         {% for method in available_payment_methods(settings) %}
-        <label class="payment-option"><input type="radio" name="payment_method" value="{{ method }}" required> {{ method }}{% if method != 'QR payment' %} — arrange your order with us{% endif %}</label>
+        <label class="payment-option"><input type="radio" name="payment_method" value="{{ method }}" required {% if method == 'Order now' %}checked{% endif %}> {{ method }}{% if method == 'Order now' %} — arrange payment later{% elif method != 'QR payment' %} — arrange your order with us{% endif %}</label>
         {% else %}<p role="alert">The store has not configured payment or contact options yet. Please try again later.</p>{% endfor %}
       </fieldset>
+      <section class="payment-coming-soon" aria-label="Online payment"><h2>Online payment coming soon</h2><p>You can place your order now. Our team will contact you to confirm delivery and arrange payment. No online payment is collected.</p></section>
       {% if settings.qr_photo_path %}<p>QR payment is manually verified. Your QR code and payment reference will appear after you place the order.</p>{% endif %}
       <p>{{ settings.payment_instructions }}</p>
       <p>Delivery charges, if any, are confirmed separately before payment. Placing an order does not mark it paid.</p>

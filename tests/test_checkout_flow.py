@@ -165,17 +165,33 @@ class CheckoutFlowTests(unittest.TestCase):
             self.assertEqual(db.get(main.Order, order_id).gateway_ref, 'RECEIPT-123')
         self.assertEqual(self.client.get('/admin/orders/999999').status_code, 404)
 
-    def test_unconfigured_checkout_disables_ordering_without_none_values(self):
+    def test_unconfigured_checkout_accepts_orders_and_notifies_admin(self):
         with self.sessions() as db:
             db.delete(db.get(main.CheckoutSettings, 1))
             db.commit()
         self.add()
         response = self.client.get('/checkout')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('has not configured payment or contact options', response.text)
+        self.assertIn('Online payment coming soon', response.text)
+        self.assertIn('value="Order now" required checked', response.text)
         self.assertNotIn('<p>None</p>', response.text)
         self.assertEqual(self.place().status_code, 400)
+        response = self.place(payment_method='Order now')
+        self.assertEqual(response.status_code, 303)
+        self.assertIn('Order received', self.client.get(response.headers['location']).text)
+        with self.sessions() as db:
+            order = db.query(main.Order).one()
+            order_id = order.id
+            self.assertEqual(order.status, 'Pending')
+            self.assertEqual(order.payment_method, 'Order now')
+            self.assertNotEqual(order.payment_status, 'Paid')
+            self.assertEqual(db.query(main.ActivityLog).filter_by(action='order_placed', entity_id=order_id).count(), 1)
         self.login_admin()
+        self.assertIn('Actual Buyer', self.client.get('/admin/orders').text)
+        html = self.client.get('/admin').text
+        notifications = html.split('id="notifDropdownPanel"')[1].split('class="notif-panel-footer"')[0]
+        self.assertIn(f'#{order_id:04d}', notifications)
+        self.assertIn('Actual Buyer', notifications)
         self.assertNotIn('value="None"', self.client.get('/admin/checkout-settings').text)
 
     def test_order_inventory_and_settings_survive_database_reconnect(self):

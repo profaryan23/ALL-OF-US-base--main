@@ -4,6 +4,7 @@
 
 {% block content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='storefront/storefront.css') }}?v=20261028-7">
+<link rel="stylesheet" href="{{ url_for('static', filename='storefront/shop-arc.css') }}?v=1">
 
 <!-- Dynamically injected active products from the inventory database -->
 {% set products_data = [] %}
@@ -12,7 +13,7 @@
   {% set prod_sizes = (p.size_variations.split(',')|map('trim')|reject('equalto', '')|list) if p.size_variations else [] %}
   {% set color_list = [] %}
   {% for col in prod_colors %}
-    {% set col_photo = url_for('static', filename=col.photo_path) if col.photo_path else (url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png')) %}
+    {% set col_photo = url_for('static', filename=col.photo_path) if col.photo_path else (url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='fav-icon.png')) %}
     {% set _ = color_list.append({
       'name': col.name,
       'hex': col.hex or col.swatch or '#222222',
@@ -22,15 +23,16 @@
     }) %}
   {% endfor %}
   {% if not color_list %}
-    {% set base_img = url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png') %}
+    {% set base_img = url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='fav-icon.png') %}
     {% set color_list = [{'name': '', 'hex': '#222222', 'photo_path': p.photo_path or '', 'img': base_img, 'filter': 'none'}] %}
   {% endif %}
   {% set _ = products_data.append({
     'id': p.id,
+    'category': p.shop_category or p.category or 'Collection',
     'name': p.name,
     'tag': (p.category or p.shop_category or 'Collection')|upper,
     'price': p.price|float,
-    'img': url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='dist/henley-grey.png'),
+    'img': url_for('static', filename=p.photo_path) if p.photo_path else url_for('static', filename='fav-icon.png'),
     'description': p.description or '',
     'sizes': prod_sizes,
     'colors': color_list,
@@ -39,7 +41,7 @@
 {% endfor %}
 <script id="shopProductsJson" type="application/json">{{ products_data|tojson }}</script>
 
-<div class="shop-page-wrapper">
+<div class="shop-page-wrapper shop-arc" data-shop-arc>
   <!-- Top Right Bag Button (Exact Match to Reference Screenshot) -->
   <div style="max-width: 1040px; margin: 0 auto 10px auto; display: flex; justify-content: flex-end;">
     <button type="button" id="shopBagHeaderBtn" class="sf-header-bag-btn" aria-label="Open shopping bag">
@@ -57,6 +59,9 @@
       <p class="shop-intro" style="max-width: 540px; margin: 12px auto 0; font-size: 13.5px; color: var(--sf-muted); line-height: 1.6;">{{ shop_page.hero_intro }}</p>
     {% endif %}
   </header>
+
+  <nav class="arc-categories" id="arcCategories" aria-label="Product categories"></nav>
+  <div class="arc-toolbar"><span id="arcCounter" role="status" aria-live="polite"></span><button id="arcMotion" type="button" aria-pressed="false">Pause motion</button></div>
 
   <!-- Stitched Seam Orbit Stage (Calculated automatically for all inventory products) -->
   <div class="orbit-stage" id="orbitStage">
@@ -78,7 +83,7 @@
   </div>
 
   <!-- Product Details Section (Matching Reference UI) -->
-  <section class="sf-details" id="productDetails" style="display: none;">
+  <section class="sf-details" id="productDetails" style="display: none;" aria-label="Selected product">
     <p class="sf-product-tag" id="detailTag">BOTTOMS</p>
     <h2 class="sf-product-name" id="detailName">Denim Baggy Jeans</h2>
     <p class="sf-product-price">
@@ -113,6 +118,7 @@
 
 </div>
 
+<script src="{{ url_for('static', filename='storefront/shop-arc.js') }}?v=1"></script>
 <script>
 (function() {
   // Read dynamic products from inventory
@@ -163,6 +169,8 @@
   var N = products.length;
   if (N === 0) {
     centerHint.textContent = "The shelves are being restocked. Check back soon.";
+    orbitCenter.classList.add("arc-empty");
+    document.getElementById("arcMotion").hidden = true;
     return;
   }
 
@@ -247,7 +255,7 @@
     }
     requestAnimationFrame(orbitLoop);
   }
-  requestAnimationFrame(orbitLoop);
+  if (!window.AllOfUsShopArc) requestAnimationFrame(orbitLoop);
 
   // Pause rotation when user hovers over orbit area so they can easily click or view
   var stageEl = document.getElementById("orbitStage");
@@ -410,6 +418,9 @@
       addToBagBtn.disabled = false;
     }
   });
+  if (window.AllOfUsShopArc) {
+    window.AllOfUsShopArc({products: products, slots: slotElements, select: selectProduct});
+  }
 })();
 </script>
 {% endblock %}
