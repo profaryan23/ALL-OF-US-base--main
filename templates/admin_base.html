@@ -21,7 +21,7 @@
       <div class="sidebar-user-meta">
         <h3 class="sidebar-user-name">{% if current_user %}{{ current_user.first_name }} {{ current_user.last_name }}{% else %}JOHN DON{% endif %}</h3>
         <p class="sidebar-user-email">{% if current_user %}{{ current_user.email }}{% else %}johndon@company.com{% endif %}</p>
-        <a href="{{ url_for('account_profile') }}">Edit profile & picture</a>
+        <a href="{{ url_for('admin_profile') }}">Edit profile & picture</a>
       </div>
     </div>
 

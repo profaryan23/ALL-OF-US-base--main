@@ -615,6 +615,8 @@ class ActivityLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
+LEGACY_SITE_ANNOUNCEMENT = "A little more room for the good things in life · Free delivery over $75"
+
 PAGE_DEFAULTS = {
     "shop": {
         "hero_eyebrow": "THE COLLECTION",
@@ -623,7 +625,7 @@ PAGE_DEFAULTS = {
         "hero_cta_label": "Explore collection",
         "hero_cta_url": "/shop",
         "hero_image_path": "images/home-hero.png",
-        "site_announcement": "A little more room for the good things in life · Free delivery over $75",
+        "site_announcement": "",
         "hero_video_caption": "ALL OF US / THE COLLECTION",
         "footer_tagline": "Good things are better together.",
         "section_eyebrow": "All essentials",
@@ -642,7 +644,7 @@ PAGE_DEFAULTS = {
         "hero_cta_label": "Find your something",
         "hero_cta_url": "/shop",
         "hero_image_path": "images/campaign-duo.png",
-        "site_announcement": "A little more room for the good things in life · Free delivery over $75",
+        "site_announcement": "",
         "hero_video_caption": "ALL OF US / THE COLLECTION",
         "footer_tagline": "Good things are better together.",
         "section_eyebrow": "OUR STORY",
@@ -659,7 +661,7 @@ PAGE_DEFAULTS = {
         "hero_intro": "We believe the everyday feels more meaningful when it brings people together.",
         "hero_cta_label": "Explore the shop",
         "hero_cta_url": "/#shop",
-        "site_announcement": "A little more room for the good things in life · Free delivery over $75",
+        "site_announcement": "",
         "hero_video_caption": "ALL OF US / A SHORT FILM",
         "footer_tagline": "Good things are better together.",
         "section_eyebrow": "Our story",
@@ -676,7 +678,7 @@ PAGE_DEFAULTS = {
         "hero_intro": "Questions about an order, a product, or anything else? Send us a note.",
         "hero_cta_label": "",
         "hero_cta_url": "",
-        "site_announcement": "A little more room for the good things in life · Free delivery over $75",
+        "site_announcement": "",
         "hero_video_caption": "ALL OF US / A SHORT FILM",
         "footer_tagline": "Good things are better together.",
         "section_eyebrow": "Get in touch",
@@ -748,6 +750,8 @@ def seed_database():
             if not existing_page:
                 db.add(PageContent(page_key=page_key, **content))
             else:
+                if existing_page.site_announcement == LEGACY_SITE_ANNOUNCEMENT:
+                    existing_page.site_announcement = ""
                 for field in ("site_announcement", "hero_video_caption", "footer_tagline"):
                     if not getattr(existing_page, field):
                         setattr(existing_page, field, content[field])
@@ -1212,12 +1216,22 @@ def require_agent(user: Annotated[User, Depends(require_user)], db: Annotated[Se
 
 @app.get("/agent", response_class=HTMLResponse)
 def agent_home(agent: Annotated[Agent, Depends(require_agent)]):
-    return RedirectResponse("/agent/crm", status_code=303)
+    return RedirectResponse("/agent/dashboard", status_code=303)
+
+
+@app.get("/agent/profile", name="agent_profile", response_class=HTMLResponse)
+def agent_profile(request: Request, agent: Annotated[Agent, Depends(require_agent)], user: Annotated[User, Depends(require_user)]):
+    return page(request, "profile.html", user=user, agent=agent, agent_module="profile", profile_mode="agent")
+
+
+@app.post("/agent/profile", name="agent_profile_update", dependencies=[Depends(verify_csrf)])
+async def agent_profile_update(request: Request, agent: Annotated[Agent, Depends(require_agent)], user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    return await update_personal_profile(request, user, db)
 
 
 @app.get("/agent/{module}", name="agent_workspace", response_class=HTMLResponse)
 def agent_workspace(module: str, request: Request, agent: Annotated[Agent, Depends(require_agent)], db: Annotated[Session, Depends(get_db)]):
-    if module not in {"crm", "inventory", "sales"}:
+    if module not in {"dashboard", "crm", "sales", "reports"}:
         raise HTTPException(404, "Module not found.")
     orders = db.query(Order).filter_by(agent_id=agent.id).order_by(Order.created_at.desc()).all()
     allocations = db.query(AgentAllocation).filter_by(agent_id=agent.id).order_by(AgentAllocation.id.desc()).all()
@@ -1225,7 +1239,12 @@ def agent_workspace(module: str, request: Request, agent: Annotated[Agent, Depen
     for order in orders:
         row = customer_rows.setdefault(order.user_id, dict(customer=order.user, orders=[]))
         row["orders"].append(order)
+    completed_orders = [order for order in orders if order.status != "Cancelled"]
+    revenue = sum((order.total_amount for order in completed_orders), Decimal("0.00"))
+    units_sold = sum(item.quantity for order in completed_orders for item in order.items)
     return page(request, "agent_workspace.html", agent=agent, agent_module=module,
+                revenue=revenue, units_sold=units_sold,
+                remaining_stock=sum(allocation.remaining for allocation in allocations),
                 agent_orders=orders, allocations=allocations, customer_rows=list(customer_rows.values()),
                 products=db.query(Product).filter_by(is_active=True).order_by(Product.name).all())
 
@@ -1504,7 +1523,7 @@ async def login_submit(request: Request, db: Annotated[Session, Depends(get_db)]
     if user and user.is_active and check_password_hash(user.password_hash, str(form.get("password", ""))):
         destination = request.query_params.get("next", "")
         if not destination or destination == "/":
-            destination = "/admin" if user.is_admin_like else ("/agent/crm" if user.role == "agent" else "/")
+            destination = "/admin" if user.is_admin_like else ("/agent/dashboard" if user.role == "agent" else "/")
         elif not destination.startswith("/") or destination.startswith("//"):
             destination = "/"
         request.session.clear()
@@ -1529,18 +1548,36 @@ async def admin_login_submit(request: Request, db: Annotated[Session, Depends(ge
         request.session["user_id"] = user.id
         request.session["session_version"] = user.session_version
         if user.role == "agent":
-            return RedirectResponse("/agent/crm", status_code=303)
+            return RedirectResponse("/agent/dashboard", status_code=303)
         return safe_redirect(request, "admin_dashboard")
     return page(request, "auth.html", mode="admin", error="Admin credentials were not recognized.", form_data=dict(form))
 
 
 @app.get("/account/profile", name="account_profile", response_class=HTMLResponse)
 def account_profile(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    if user.role != "customer":
+        return safe_redirect(request, "admin_profile" if user.is_admin_like else "agent_profile")
     return page(request, "profile.html", user=user, profile_mode="customer")
+
+
+@app.get("/admin/profile", name="admin_profile", response_class=HTMLResponse)
+def admin_profile(request: Request, user: Annotated[User, Depends(require_admin)]):
+    return page(request, "profile.html", user=user, profile_mode="admin", active_module="profile", module_label="Profile")
+
+
+@app.post("/admin/profile", name="admin_profile_update", dependencies=[Depends(verify_csrf)])
+async def admin_profile_update(request: Request, user: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    return await update_personal_profile(request, user, db)
 
 
 @app.post("/account/profile", name="account_profile_update", dependencies=[Depends(verify_csrf)])
 async def account_profile_update(request: Request, user: Annotated[User, Depends(require_user)], db: Annotated[Session, Depends(get_db)]):
+    if user.role != "customer":
+        return safe_redirect(request, "admin_profile" if user.is_admin_like else "agent_profile")
+    return await update_personal_profile(request, user, db)
+
+
+async def update_personal_profile(request: Request, user: User, db: Session):
     form = await request.form()
     first_name = str(form.get("first_name", user.first_name)).strip()
     last_name = str(form.get("last_name", user.last_name)).strip()
@@ -1577,7 +1614,7 @@ async def account_profile_update(request: Request, user: Annotated[User, Depends
                         entity_id=user.id, details="Updated personal profile.")
     db.commit()
     request.session["flash"] = ["success", "Your profile was updated."]
-    return safe_redirect(request, "account_profile")
+    return safe_redirect(request, "admin_profile" if user.is_admin_like else "agent_profile" if user.role == "agent" else "account_profile")
 
 
 @app.post("/logout", name="logout", dependencies=[Depends(verify_csrf)])

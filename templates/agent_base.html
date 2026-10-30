@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Agent {{ agent_module|title }} · All of Us{% endblock %}
+{% block content %}
+<section class="admin-shell admin-sidebar-layout">
+  <aside class="admin-sidebar" aria-label="Agent navigation">
+    <a class="brand-link studio-brand" href="{{ url_for('agent_workspace', module='dashboard') }}"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="44" height="44"><span>Studio</span></a>
+    <div class="sidebar-profile-card">
+      <div class="sidebar-avatar-wrap">{% if current_user.profile_image %}<img class="sidebar-avatar-img" src="{{ url_for('static', filename=current_user.profile_image) }}" alt="Your profile">{% else %}<div class="sidebar-avatar-circle" aria-hidden="true">{{ current_user.first_name[:1] }}</div>{% endif %}</div>
+      <div class="sidebar-user-meta"><h3 class="sidebar-user-name">{{ current_user.first_name }} {{ current_user.last_name }}</h3><p class="sidebar-user-email">{{ current_user.email }}</p><a href="{{ url_for('agent_profile') }}">Edit profile & picture</a></div>
+    </div>
+    <div class="sidebar-nav-section">
+      <div class="sidebar-section-heading">AGENT WORKSPACE</div>
+      <nav class="sidebar-section-nav module-nav" aria-label="Agent modules">
+        {% for module, label, icon in [('dashboard', 'Dashboard', 'M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z'), ('sales', 'Sales', 'M3 17l6-6 4 4 8-12 M15 3h6v6'), ('crm', 'CRM', 'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M9 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8 M18 8h4 M20 6v4'), ('reports', 'Reports', 'M4 3h16v18H4z M8 8h8 M8 12h8 M8 16h5')] %}
+        <a class="nav-item {% if agent_module == module %}active{% endif %}" href="{{ url_for('agent_workspace', module=module) }}" {% if agent_module == module %}aria-current="page"{% endif %}><svg class="nav-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{ icon }}"/></svg><span class="nav-text">{{ label }}</span></a>
+        {% endfor %}
+      </nav>
+    </div>
+    <div class="sidebar-nav-section">
+      <div class="sidebar-section-heading">PUBLIC STORE LINKS</div>
+      <nav class="sidebar-section-nav module-nav" aria-label="Public Store Links">
+        {% for route, label in [('shop_page', 'Shop'), ('about_page', 'About'), ('contact_page', 'Contact')] %}
+        <a class="nav-item" href="{{ url_for(route) }}" target="_blank" rel="noopener"><svg class="nav-icon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M14 3h7v7 M21 3 10 14 M10 3H3v18h18v-7"/></svg><span class="nav-text">{{ label }}</span><span class="nav-arrow" aria-hidden="true">↗</span></a>
+        {% endfor %}
+      </nav>
+    </div>
+    <div class="sidebar-bottom-actions"><a class="sidebar-storefront-btn" href="{{ url_for('storefront') }}">View Storefront ↗</a><form class="sidebar-signout-form" method="post" action="{{ url_for('logout') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="sidebar-signout-btn" type="submit">Sign Out</button></form></div>
+  </aside>
+  <div class="admin-main-pane">
+    <div class="admin-top"><div><p class="eyebrow">All of Us / Agent workspace</p><h1>{{ agent_module|upper if agent_module == 'crm' else agent_module|title }}<span class="heading-period">.</span></h1></div></div>
+    {% block module_content %}{% endblock %}
+  </div>
+</section>
+{% endblock %}

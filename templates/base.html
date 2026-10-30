@@ -12,15 +12,15 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500&family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}?v=20261028-6">
-  <link rel="stylesheet" href="{{ url_for('static', filename='monochrome.css') }}?v=20261028-6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='monochrome.css') }}?v=20261030-studio-2">
   <link rel="stylesheet" href="{{ url_for('static', filename='product-pages.css') }}?v=20261029-logo">
 </head>
-{% set is_admin_dashboard = request.url.path.startswith('/admin') and request.url.path != '/admin/login' %}
+{% set is_admin_dashboard = (request.url.path.startswith('/admin') and request.url.path != '/admin/login') or request.url.path == '/agent' or request.url.path.startswith('/agent/') %}
 {% set is_shop_page = request.url.path == '/shop' %}
 {% set is_home_page = request.url.path == '/' %}
 <body class="{% if is_admin_dashboard %}admin-layout-body{% elif is_shop_page %}shop-layout-body{% elif is_home_page %}home-layout-body{% endif %}">
   {% if not is_admin_dashboard %}
-  <div class="announcement">{{ site_content.site_announcement }}</div>
+  {% if site_content.site_announcement %}<div class="announcement">{{ site_content.site_announcement }}</div>{% endif %}
   <header class="site-header">
     <a class="wordmark brand-link" href="{{ url_for('storefront') }}" aria-label="All of Us home"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="64" height="64"></a>
     <nav class="main-nav" aria-label="Main navigation">
@@ -29,8 +29,8 @@
       <a href="{{ url_for('about_page') }}" class="{% if request.url.path == '/about' %}nav-active{% endif %}">About</a>
       <a href="{{ url_for('contact_page') }}" class="{% if request.url.path == '/contact' %}nav-active{% endif %}">Contact</a>
       {% if current_user and current_user.role == 'customer' %}<a href="{{ url_for('order_history') }}">Your orders</a>{% endif %}
-      {% if current_user and current_user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='crm') }}">Agent workspace</a>{% endif %}
-      {% if current_user %}<a href="{{ url_for('account_profile') }}">Profile</a>{% endif %}
+      {% if current_user and current_user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='dashboard') }}">Agent workspace</a>{% endif %}
+      {% if current_user %}<a href="{{ url_for('admin_profile') if current_user.is_admin_like else url_for('agent_profile') if current_user.role == 'agent' else url_for('account_profile') }}">Profile</a>{% endif %}
       {% if current_user and current_user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">Studio</a>{% endif %}
     </nav>
     <div class="header-actions">

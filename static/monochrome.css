@@ -1470,9 +1470,12 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
 }
 
 .admin-sidebar .sidebar-profile-card {
+  flex-direction: row;
+  align-items: center;
+  text-align: left;
   padding: 18px 12px !important;
   margin: 0;
-  gap: 0;
+  gap: 12px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.015)) !important;
   border: 1px solid var(--studio-line) !important;
   border-radius: 16px !important;
@@ -1480,14 +1483,15 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
 }
 
 .admin-sidebar .sidebar-avatar-wrap {
-  margin-bottom: 12px;
+  flex: 0 0 auto;
+  margin-bottom: 0;
 }
 
 .admin-sidebar .sidebar-avatar-circle,
 .admin-sidebar .sidebar-avatar-img {
   box-sizing: border-box;
-  width: 60px;
-  height: 60px;
+  width: 44px;
+  height: 44px;
   color: #e5e5e5;
   background: linear-gradient(145deg, #383838, #171717);
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -1495,6 +1499,7 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
 }
 
 .admin-sidebar .sidebar-user-meta {
+  align-items: flex-start;
   gap: 5px;
   min-width: 0;
   max-width: 100%;
@@ -1502,7 +1507,7 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
 
 .admin-sidebar .sidebar-user-name {
   color: var(--studio-text);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   letter-spacing: 0.035em;
   overflow-wrap: anywhere;
@@ -1652,13 +1657,21 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
 }
 
 .admin-sidebar .sidebar-section-nav .nav-item.active {
-  color: #fff;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.06));
-  border-color: rgba(255, 255, 255, 0.18);
-  box-shadow: inset 2px 0 0 #fff, 0 4px 12px rgba(0, 0, 0, 0.15);
+  color: #101010;
+  background: linear-gradient(110deg, #fff, #dedede);
+  border-color: #fff;
+  box-shadow: inset 0 1px 0 #fff, 0 4px 18px rgba(255, 255, 255, 0.09);
 }
 
-.admin-sidebar .sidebar-section-nav .nav-item.active .nav-icon,
+.admin-sidebar .sidebar-section-nav .nav-item.active .nav-icon {
+  color: #171717;
+}
+
+.admin-sidebar .nav-item.active .sidebar-order-badge {
+  color: #fff;
+  background: #171717;
+}
+
 .admin-sidebar .nav-item .nav-arrow {
   color: #e5e5e5;
 }
@@ -1764,9 +1777,9 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
   }
 
   .admin-sidebar .sidebar-section-nav .nav-item.active {
-    background: linear-gradient(110deg, rgba(255, 255, 255, 0.17), rgba(255, 255, 255, 0.06)) !important;
-    border-color: rgba(255, 255, 255, 0.25) !important;
-    color: #fff !important;
+    background: linear-gradient(110deg, #fff, #dedede) !important;
+    border-color: #fff !important;
+    color: #101010 !important;
   }
 }
 

@@ -1,6 +1,10 @@
-{% extends "base.html" %}
+{% extends "admin_base.html" if profile_mode == "admin" else "agent_base.html" if profile_mode == "agent" else "base.html" %}
 {% block title %}Profile · All of Us{% endblock %}
-{% block content %}
+{% block module_title %}Profile{% endblock %}
+{% block module_heading %}Your profile{% endblock %}
+{% block content %}{% if profile_mode in ['admin', 'agent'] %}{{ super() }}{% else %}{{ self.profile_form() }}{% endif %}{% endblock %}
+{% block module_content %}{{ self.profile_form() }}{% endblock %}
+{% block profile_form %}
 <section class="auth-shell narrow-shell">
   <div class="auth-card">
     <div class="auth-header">
@@ -8,7 +12,7 @@
       <h1>Manage your account</h1>
     </div>
 
-    <form method="post" action="{{ url_for('account_profile_update') }}" enctype="multipart/form-data" class="stack-form">
+    <form method="post" action="{{ url_for('admin_profile_update') if profile_mode == 'admin' else url_for('agent_profile_update') if profile_mode == 'agent' else url_for('account_profile_update') }}" enctype="multipart/form-data" class="stack-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label>First name<input name="first_name" value="{{ user.first_name }}" required></label>
       <label>Last name<input name="last_name" value="{{ user.last_name }}" required></label>
@@ -24,7 +28,7 @@
       <label>About / other details<textarea name="bio" maxlength="1000">{{ user.bio }}</textarea></label>
       <button class="button button-dark" type="submit">Save profile</button>
     </form>
-    {% if user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">← Back to Studio</a>{% elif user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='crm') }}">← Back to agent workspace</a>{% endif %}
+    {% if user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">← Back to Studio</a>{% elif user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='dashboard') }}">← Back to agent workspace</a>{% endif %}
   </div>
 </section>
 {% endblock %}

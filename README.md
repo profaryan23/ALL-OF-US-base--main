@@ -11,32 +11,80 @@ Supabase provides PostgreSQL. No live cloud deployment is performed by these fil
 
 ## Run locally
 
+### Windows / VS Code PowerShell — first-time setup
+
+Install Python 3.10 or newer, then open a PowerShell terminal in the project folder:
+
+```powershell
+Set-Location 'C:\Users\aryan\Downloads\ALL-OF-US-base--main'
+python -m venv venv
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+### Start the server each time (Windows)
+
+```powershell
+Set-Location 'C:\Users\aryan\Downloads\ALL-OF-US-base--main'
+$env:APP_ENV = 'development'
+$env:DATABASE_URL = 'sqlite:///allofus.db'
+$env:COOKIE_SECURE = 'false'
+.\venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+No virtual-environment activation is needed. Keep this terminal open while using the site;
+press **Ctrl+C** to stop the server. Run the same block to start it again.
+These settings use your local SQLite database, not a production database from `.env`.
+The database and starter catalog are created on first startup; existing data is retained.
+
+- **Website:** <http://127.0.0.1:8001>
+- **Admin login:** <http://127.0.0.1:8001/admin/login>
+- **Admin dashboard:** <http://127.0.0.1:8001/admin>
+- **Health check:** <http://127.0.0.1:8001/healthz>
+
+For a fresh local database, the default login is `admin@allofus.com` / `admin123`.
+If `.env` sets `ADMIN_EMAIL` / `ADMIN_PASSWORD`, those values seed a new database instead.
+Existing accounts keep their current passwords.
+
+If `venv` exists but `venv\Scripts\python.exe` is missing, repair it with
+`python -m venv venv`, then install the requirements again.
+If port 8001 is occupied, choose `--port 8002` and open that port in your browser.
+After CSS updates, use **Ctrl+Shift+R** to force a fresh copy of the styles.
+
+### macOS / Linux
+
 ```sh
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+APP_ENV=development DATABASE_URL=sqlite:///allofus.db COOKIE_SECURE=false .venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
-On Windows (PowerShell):
-```powershell
-python -m venv venv
-.\venv\Scripts\python -m pip install -r requirements.txt
-.\venv\Scripts\uvicorn main:app --host 127.0.0.1 --port 8001 --reload
-```
+### Company announcement
 
-Open <http://127.0.0.1:8001> (or port 8000). The SQLite database (`allofus.db`) and sample catalog are created automatically on first startup.
+The old delivery promotion has been removed. An empty announcement is hidden without
+leaving a blank strip. Add your company slogan later through **Studio > Content > Home >
+Site announcement banner** (or the Shop announcement field). Save to display it again.
 
 ## Admin modules
 
-Open <http://127.0.0.1:8000/admin/login> and sign in with `admin@allofus.com` / `admin123`. The overview is at <http://127.0.0.1:8000/admin>; each workspace is separate:
+Profiles are role-specific: staff use `/admin/profile`, agents use `/agent/profile`,
+and storefront customers use `/account/profile`. Staff visiting the old customer
+profile URL are redirected to their own profile.
 
-- CRM: <http://127.0.0.1:8000/admin/crm>
-- Inventory: <http://127.0.0.1:8000/admin/inventory>
-- Sales: <http://127.0.0.1:8000/admin/sales>
-- Orders: <http://127.0.0.1:8000/admin/orders>
-- Content management: <http://127.0.0.1:8000/admin/content>
-- Website analytics: <http://127.0.0.1:8000/admin/analytics>
-- Combined reports: <http://127.0.0.1:8000/admin/reports>
+Agents land on `/agent/dashboard` after login. Their workspace contains **Dashboard,
+Sales, CRM, Reports, and Public Store Links** (Shop, About, Contact). Sales includes
+read-only allocated stock and sale recording. CRM and reports show only that agent's
+customers and sales, even when another `agent_id` is supplied in the URL. Agents cannot
+access admin modules or the former standalone `/agent/inventory` module.
+
+Open <http://127.0.0.1:8001/admin/login> and sign in with your admin account. The overview is at <http://127.0.0.1:8001/admin>; each workspace is separate:
+
+- CRM: <http://127.0.0.1:8001/admin/crm>
+- Inventory: <http://127.0.0.1:8001/admin/inventory>
+- Sales: <http://127.0.0.1:8001/admin/sales>
+- Orders: <http://127.0.0.1:8001/admin/orders>
+- Content management: <http://127.0.0.1:8001/admin/content>
+- Website analytics: <http://127.0.0.1:8001/admin/analytics>
+- Combined reports: <http://127.0.0.1:8001/admin/reports>
 
 The public site includes the Home page at `/`, the dedicated collection at `/shop`, product details at `/shop/product/{id}`, About at `/about`, and Contact at `/contact`. Select a product from Home or Shop to see its full inventory description, photo, price, size choices, and availability before adding it to the bag. In Studio > Content, edit each page's headings, copy, SEO description, and publishing state. The Home editor also manages the site announcement, video caption, shop-section copy, closing message, and footer tagline. Contact form submissions are saved in the Studio inbox and can be marked read/unread; the form does not send email.
 

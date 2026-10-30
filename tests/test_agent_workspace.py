@@ -40,8 +40,8 @@ class AgentWorkspaceTests(unittest.TestCase):
         token = self.agent_token('/login')
         response = self.agent_client.post('/login', data=dict(csrf_token=token, email='own-agent@example.com',
                                                               password='agent-password'), follow_redirects=False)
-        self.assertEqual(response.headers['location'], '/agent/crm')
-        self.agent_csrf = self.agent_token('/account/profile')
+        self.assertEqual(response.headers['location'], '/agent/dashboard')
+        self.agent_csrf = self.agent_token('/agent/profile')
 
     def agent_token(self, path):
         import re
@@ -65,7 +65,7 @@ class AgentWorkspaceTests(unittest.TestCase):
             db.flush()
             db.add(main.Order(user_id=customer.id, agent_id=other_id, total_amount=Decimal('9999.00')))
             db.commit()
-        for module in ['crm', 'inventory', 'sales']:
+        for module in ['dashboard', 'crm', 'sales', 'reports']:
             response = self.agent_client.get('/agent/' + module + '?agent_id=999')
             self.assertEqual(response.status_code, 200)
             self.assertNotIn('Other agent', response.text)
@@ -89,7 +89,7 @@ class AgentWorkspaceTests(unittest.TestCase):
         self.assertIn('1450.50', self.client.get('/admin/sales').text)
 
     def test_profile_picture_email_details_and_stable_agent_link(self):
-        response = self.agent_client.post('/account/profile', data=dict(csrf_token=self.agent_csrf,
+        response = self.agent_client.post('/agent/profile', data=dict(csrf_token=self.agent_csrf,
             first_name='Updated', last_name='Agent', email='updated-agent@example.com', phone='9801234567',
             current_password='agent-password', address='Pokhara', bio='Regional sales'),
             files={'profile_image': ('avatar.png', b'\x89PNG\r\n\x1a\nprofile', 'image/png')})
@@ -102,8 +102,8 @@ class AgentWorkspaceTests(unittest.TestCase):
             self.assertEqual(user.bio, 'Regional sales')
             self.assertEqual(user.address, 'Pokhara')
             self.assertEqual(self.agent_client.get('/static/' + user.profile_image).status_code, 200)
-        self.assertEqual(self.agent_client.get('/agent/inventory').status_code, 200)
-        response = self.agent_client.post('/account/profile', data=dict(csrf_token=self.agent_csrf,
+        self.assertEqual(self.agent_client.get('/agent/sales').status_code, 200)
+        response = self.agent_client.post('/agent/profile', data=dict(csrf_token=self.agent_csrf,
             email='stolen@example.com', first_name='Updated', last_name='Agent'))
         self.assertEqual(response.status_code, 400)
 
@@ -134,7 +134,7 @@ class AgentWorkspaceTests(unittest.TestCase):
         self.assertNotIn('Agents', access)
         self.assertIn('RBACM', access)
         self.assertIn('Edit profile & picture', html)
-        response = self.client.post('/account/profile', data=dict(csrf_token=self.csrf,
+        response = self.client.post('/admin/profile', data=dict(csrf_token=self.csrf,
             first_name='Studio', last_name='Admin', phone='9800000000', bio='Store manager', address='Kathmandu'),
             files={'profile_image': ('admin.png', b'\x89PNG\r\n\x1a\nadmin', 'image/png')})
         self.assertEqual(response.status_code, 200)
@@ -150,8 +150,41 @@ class AgentWorkspaceTests(unittest.TestCase):
         with self.sessions() as db:
             self.assertEqual(db.get(main.Agent, self.agent_id).user_id, self.user_id)
 
+    def test_role_specific_profiles_and_agent_modules(self):
+        for client, destination in [(self.client, '/admin/profile'), (self.agent_client, '/agent/profile')]:
+            response = client.get('/account/profile', follow_redirects=False)
+            self.assertEqual(response.status_code, 303)
+            self.assertTrue(response.headers['location'].endswith(destination))
+            html = client.get(destination).text
+            self.assertIn('admin-sidebar', html)
+            self.assertIn(f'action="http://testserver{destination}"', html)
+        self.assertEqual(self.agent_client.get('/admin/profile').status_code, 403)
+        self.assertEqual(self.client.get('/agent/profile').status_code, 403)
+        self.assertEqual(self.agent_client.get('/agent/inventory').status_code, 404)
+        self.assertEqual(self.agent_client.get('/agent', follow_redirects=False).headers['location'], '/agent/dashboard')
+        html = self.agent_client.get('/agent/dashboard').text
+        nav = html.split('aria-label="Agent modules"')[1].split('</nav>')[0]
+        for label in ['Dashboard', 'Sales', 'CRM', 'Reports']:
+            self.assertIn(label, nav)
+        for label in ['Inventory', 'RBAC', 'Accounts', 'Content']:
+            self.assertNotIn(label, nav)
+        self.assertIn('aria-label="Public Store Links"', html)
+        with self.sessions() as db:
+            db.add(main.User(first_name='Web', last_name='Customer', email='profile-customer@example.com',
+                            password_hash=main.generate_password_hash('customer-password'), role='customer'))
+            db.commit()
+        with TestClient(main.app) as customer:
+            import re
+            token = re.search(r'name="csrf_token"\s+value="([^"]+)"', customer.get('/login').text).group(1)
+            customer.post('/login', data=dict(csrf_token=token, email='profile-customer@example.com', password='customer-password'))
+            html = customer.get('/account/profile').text
+            self.assertIn('action="http://testserver/account/profile"', html)
+            self.assertNotIn('admin-sidebar', html)
+            self.assertEqual(customer.get('/admin/profile').status_code, 403)
+            self.assertEqual(customer.get('/agent/dashboard').status_code, 403)
+
     def test_profile_validation_and_account_management_permissions(self):
-        response = self.agent_client.post('/account/profile', data=dict(csrf_token=self.agent_csrf,
+        response = self.agent_client.post('/agent/profile', data=dict(csrf_token=self.agent_csrf,
             first_name='Private', last_name='Agent'), files={'profile_image': ('bad.png', b'not an image', 'image/png')})
         self.assertEqual(response.status_code, 400)
         for action in ['update', 'delete']:

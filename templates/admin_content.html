@@ -101,7 +101,7 @@
             </label>
             <label class="content-field-wide">
               <span>Black header announcement bar</span>
-              <input name="site_announcement" value="{{ shop_item.site_announcement if shop_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240">
+              <input name="site_announcement" value="{{ shop_item.site_announcement if shop_item else '' }}" maxlength="240">
             </label>
             <label class="content-field-wide">
               <span>SEO meta description</span>
@@ -294,7 +294,7 @@ bringing us in.' }}</textarea><small>For a multi-line headline with italic empha
           <label><span>CTA button label</span><input name="hero_cta_label" value="{{ home_item.hero_cta_label if home_item else 'Find your something' }}" maxlength="80"></label>
           <label><span>CTA button link</span><input name="hero_cta_url" value="{{ home_item.hero_cta_url if home_item else '/shop' }}" maxlength="200" placeholder="/shop"></label>
 
-          <label class="content-field-wide"><span>Site announcement banner</span><input name="site_announcement" value="{{ home_item.site_announcement if home_item else 'A little more room for the good things in life · Free delivery over $75' }}" maxlength="240"></label>
+          <label class="content-field-wide"><span>Site announcement banner</span><input name="site_announcement" value="{{ home_item.site_announcement if home_item else '' }}" maxlength="240"></label>
 
           <label><span>Our Story eyebrow</span><input name="section_eyebrow" value="{{ home_item.section_eyebrow if home_item else 'OUR STORY' }}" maxlength="100"></label>
           <label><span>Our Story heading</span><input name="section_heading" value="{{ home_item.section_heading if home_item else 'Made by friends, for all of us.' }}" maxlength="240"></label>
