@@ -2,21 +2,769 @@
 {% block module_title %}Agents{% endblock %}
 {% block module_heading %}Agent management{% endblock %}
 {% block module_content %}
-<section class="admin-section">
-  <h2>Agent leaderboard</h2><p>Ranked by completed-sale units, then revenue. Pending and cancelled sales do not earn commission here.</p>
-  <div class="table-wrap"><table><thead><tr><th>Rank / Agent</th><th>Contact</th><th>Units sold</th><th>Sales (Rs)</th><th>Commission (Rs)</th><th>Related modules</th></tr></thead><tbody>
-  {% for row in leaderboard %}<tr id="agent-{{ row.agent.id }}"><td>{{ loop.index }}. {{ row.agent.name }}</td><td>{{ row.agent.phone }}<small>{{ row.agent.email }}</small></td><td>{{ row.units }}</td><td>Rs {{ '%.2f'|format(row.revenue) }}</td><td>Rs {{ '%.2f'|format(row.commission) }}</td><td>{% for endpoint, label in [('admin_sales','Sales'),('admin_orders','Orders'),('admin_crm','CRM'),('admin_reports','Reports')] %}<a href="{{ url_for(endpoint, agent_id=row.agent.id) }}">{{ label }}</a> {% endfor %}</td></tr>{% else %}<tr><td colspan="6">No agents yet.</td></tr>{% endfor %}
-  </tbody></table></div>
-</section>
-<section class="admin-section"><h2>Add agent</h2><form method="post" action="{{ url_for('create_agent') }}" class="product-editor-grid"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><label>Name<input name="name" maxlength="140" required></label><label>Phone<input name="phone" maxlength="40"></label><label>Email<input name="email" type="email" maxlength="255"></label><button class="button button-dark">Add agent</button></form></section>
-<section class="admin-section"><h2>Issue products to an agent</h2><p>Issuing stock moves it out of warehouse availability. Selling allocated stock does not deduct warehouse stock again.</p>
-<form method="post" action="{{ url_for('allocate_agent_stock') }}" class="product-editor-grid" data-variant-sale><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<label>Agent<select name="agent_id" required><option value="">Choose agent</option>{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</select></label>
-<label>Product<select name="product_id" required data-variant-product><option value="">Choose product</option>{% for product in products %}<option value="{{ product.id }}" data-sizes="{{ product.size_variations }}" data-colors='{{ product_colors(product)|tojson }}'>{{ product.name }} — Rs {{ product.price }} ({{ product.stock_quantity }} available)</option>{% endfor %}</select></label>
-<label>Size<select name="size_variation" data-variant-size></select></label><label>Color<select name="color_variation" data-variant-color></select></label>
-<label>Quantity<input name="quantity" type="number" min="1" value="1" required></label><label>Company discount (%)<input name="company_discount_percent" type="number" min="0" max="100" step="0.01" value="10" required></label><button class="button button-dark">Issue stock</button></form></section>
-<section class="admin-section"><h2>Products taken / acquisition ledger</h2><div class="table-wrap"><table><thead><tr><th>Allocation / Date</th><th>Agent</th><th>Product / Variant</th><th>Issued / Remaining</th><th>List price</th><th>Company discount</th><th>Acquisition cost / unit</th></tr></thead><tbody>
-{% for a in allocations %}<tr><td>#{{ a.id }}<small>{{ a.created_at.strftime('%Y-%m-%d') }}</small></td><td>{{ a.agent.name }}</td><td>{{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }}</td><td>{{ a.quantity }} / {{ a.remaining }}</td><td>Rs {{ a.list_price }}</td><td>{{ a.company_discount_percent }}%</td><td>Rs {{ a.unit_cost }}</td></tr>{% else %}<tr><td colspan="7">No stock issued.</td></tr>{% endfor %}</tbody></table></div></section>
-<section class="admin-section"><h2>Agent sales &amp; commission ledger</h2><a class="button button-outline" href="{{ url_for('admin_sales') }}">Record an agent sale ↗</a><div class="table-wrap"><table><thead><tr><th>Order / Agent</th><th>Status</th><th>Product / Variant</th><th>Units</th><th>Acquisition / unit</th><th>Sold / unit</th><th>Commission</th></tr></thead><tbody>
-{% for order in agent_orders %}{% for item in order.items %}<tr><td>#{{ order.id }} / {{ order.agent.name }}</td><td>{{ order.status }}</td><td>{{ item.product.name }} / {{ item.size_variation }} / {{ item.color_variation }}</td><td>{{ item.quantity }}</td><td>Rs {{ item.agent_unit_cost }} ({{ item.company_discount_percent }}% off)</td><td>Rs {{ item.price_at_purchase }}</td><td>{{ item.commission_percent }}% = Rs {{ item.commission_amount }}{% if order.status != 'Completed' %} (not earned){% endif %}</td></tr>{% endfor %}{% else %}<tr><td colspan="7">No agent sales yet.</td></tr>{% endfor %}</tbody></table></div></section>
+
+<!-- =========================================================================
+     1. TOP SUMMARY KPI CARDS (DASHBOARD HEADER METRICS)
+     ========================================================================= -->
+<div class="agent-kpi-grid">
+  <!-- Card 1: Active Agents -->
+  <div class="agent-kpi-card">
+    <div class="kpi-card-header">
+      <span class="kpi-card-label">Active Agents</span>
+      <div class="kpi-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      </div>
+    </div>
+    <div class="kpi-card-value">{{ summary.active_agents_count }} <span style="font-size: 16px; font-weight: 500; color: #6b7280;">/ {{ summary.total_agents_count }}</span></div>
+    <div class="kpi-card-subtext">
+      <span>Agents in network</span>
+      <span class="kpi-pill kpi-pill-success">
+        ● {{ '%.0f'|format((summary.active_agents_count / summary.total_agents_count * 100) if summary.total_agents_count else 0) }}% Active Roster
+      </span>
+    </div>
+  </div>
+
+  <!-- Card 2: Stock with Agents -->
+  <div class="agent-kpi-card">
+    <div class="kpi-card-header">
+      <span class="kpi-card-label">Stock with Agents</span>
+      <div class="kpi-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+      </div>
+    </div>
+    <div class="kpi-card-value">{{ summary.stock_with_agents_units }} <span style="font-size: 14px; font-weight: 500; color: #6b7280;">units</span></div>
+    <div class="kpi-card-subtext">
+      <span>{{ summary.units_sold_total }} sold / {{ summary.total_stock_issued_units }} issued</span>
+      <span class="kpi-pill kpi-pill-success">{{ '%.1f'|format(performance.sell_through_rate) }}% sold</span>
+    </div>
+    <div class="kpi-progress-bar-wrap" title="{{ '%.1f'|format(performance.sell_through_rate) }}% sell-through rate">
+      <div class="kpi-progress-bar-fill" style="width: {{ [performance.sell_through_rate, 100]|min }}%;"></div>
+    </div>
+  </div>
+
+  <!-- Card 3: Completed Sales -->
+  <div class="agent-kpi-card">
+    <div class="kpi-card-header">
+      <span class="kpi-card-label">Completed Sales</span>
+      <div class="kpi-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+      </div>
+    </div>
+    <div class="kpi-card-value">Rs {{ '%.2f'|format(summary.completed_sales_revenue) }}</div>
+    <div class="kpi-card-subtext">
+      <span>{{ summary.completed_sales_orders_count }} orders completed</span>
+      <span class="kpi-pill kpi-pill-success">+Rs {{ '%.2f'|format(performance.gross_margin_amount) }} margin</span>
+    </div>
+  </div>
+
+  <!-- Card 4: Commission Earned -->
+  <div class="agent-kpi-card">
+    <div class="kpi-card-header">
+      <span class="kpi-card-label">Commission Earned</span>
+      <div class="kpi-card-icon" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/></svg>
+      </div>
+    </div>
+    <div class="kpi-card-value">Rs {{ '%.2f'|format(summary.total_commission_earned) }}</div>
+    <div class="kpi-card-subtext">
+      <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+        <span class="kpi-pill kpi-pill-success" title="Settled commissions">Settled: Rs {{ '%.2f'|format(summary.commission_settled) }}</span>
+        <span class="kpi-pill kpi-pill-pending" title="Pending payout">Pending: Rs {{ '%.2f'|format(summary.commission_pending) }}</span>
+      </div>
+      {% if summary.commission_pending > 0 %}
+      <form method="post" action="{{ url_for('settle_agent_commission') }}" style="margin: 0; display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="settle_all" value="1">
+        <button type="submit" class="kpi-action-btn-sm" title="Settle all pending commissions">Settle All →</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     MODULAR NAVIGATION TABS
+     ========================================================================= -->
+<nav class="agent-tab-nav" aria-label="Agent Management Sections">
+  <button type="button" class="agent-tab-btn active" id="tabBtnAnalytics" data-tab="paneAnalytics">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 12h10"/><path d="M12 7v10"/></svg>
+    <span>Overview &amp; Analytics</span>
+  </button>
+  <button type="button" class="agent-tab-btn" id="tabBtnLeaderboard" data-tab="paneLeaderboard">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
+    <span>Leaderboard &amp; Scorecards</span>
+  </button>
+  <button type="button" class="agent-tab-btn" id="tabBtnStock" data-tab="paneStock">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+    <span>Issue Stock &amp; Add Agent</span>
+  </button>
+  <button type="button" class="agent-tab-btn" id="tabBtnLedgers" data-tab="paneLedgers">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" x2="8" y1="13" y2="13"/><line x1="16" x2="8" y1="17" y2="17"/></svg>
+    <span>Ledgers &amp; Settlement</span>
+  </button>
+</nav>
+
+<!-- =========================================================================
+     TAB PANE 1: OVERVIEW & ANALYTICS
+     ========================================================================= -->
+<div class="agent-tab-pane active" id="paneAnalytics">
+  <!-- Performance Overview Row -->
+  <div class="agent-perf-grid">
+    <div class="agent-perf-card">
+      <span class="perf-card-title">Sell-Through Rate</span>
+      <div class="perf-card-val">{{ '%.1f'|format(performance.sell_through_rate) }}%</div>
+      <div class="kpi-progress-bar-wrap" style="margin-top: 6px;">
+        <div class="kpi-progress-bar-fill" style="width: {{ [performance.sell_through_rate, 100]|min }}%;"></div>
+      </div>
+      <span class="perf-card-desc">{{ summary.units_sold_total }} sold of {{ summary.total_stock_issued_units }} issued</span>
+    </div>
+
+    <div class="agent-perf-card">
+      <span class="perf-card-title">Order Completion Rate</span>
+      <div class="perf-card-val">{{ '%.1f'|format(performance.completion_rate) }}%</div>
+      <div class="kpi-progress-bar-wrap" style="margin-top: 6px;">
+        <div class="kpi-progress-bar-fill" style="width: {{ [performance.completion_rate, 100]|min }}%;"></div>
+      </div>
+      <span class="perf-card-desc">{{ summary.completed_sales_orders_count }} orders fulfilled</span>
+    </div>
+
+    <div class="agent-perf-card">
+      <span class="perf-card-title">Target Attainment</span>
+      <div class="perf-card-val">{{ '%.1f'|format(performance.target_attainment_pct) }}%</div>
+      <div class="kpi-progress-bar-wrap" style="margin-top: 6px;">
+        <div class="kpi-progress-bar-fill" style="width: {{ [performance.target_attainment_pct, 100]|min }}%;"></div>
+      </div>
+      <span class="perf-card-desc">Target: Rs {{ '%.0f'|format(performance.total_team_target) }}</span>
+    </div>
+
+    <div class="agent-perf-card">
+      <span class="perf-card-title">Gross Margin Retention</span>
+      <div class="perf-card-val">{{ '%.1f'|format(performance.gross_margin_pct) }}%</div>
+      <div class="kpi-progress-bar-wrap" style="margin-top: 6px;">
+        <div class="kpi-progress-bar-fill" style="width: {{ [performance.gross_margin_pct, 100]|min }}%;"></div>
+      </div>
+      <span class="perf-card-desc">Rs {{ '%.2f'|format(performance.gross_margin_amount) }} profit retained</span>
+    </div>
+  </div>
+
+  <!-- Charts & Visuals Row -->
+  <div class="agent-charts-row">
+    <!-- Trend Chart -->
+    <div class="agent-chart-card">
+      <div class="agent-chart-header">
+        <div>
+          <h3>Sales &amp; Commission Trend</h3>
+          <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Monthly revenue bars vs. commission line</p>
+        </div>
+        <div class="chart-legend">
+          <div class="legend-item"><span class="legend-dot" style="background: #111111;"></span><span>Sales (Rs)</span></div>
+          <div class="legend-item"><span class="legend-dot" style="background: #6b7280;"></span><span>Commission (Rs)</span></div>
+        </div>
+      </div>
+      
+      <!-- Pure SVG Responsive Trend Chart -->
+      <svg class="svg-trend-chart" viewBox="0 0 520 200" preserveAspectRatio="none" role="img" aria-label="Sales and Commission trend chart">
+        <!-- Horizontal grid lines -->
+        <line x1="30" y1="170" x2="500" y2="170" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="120" x2="500" y2="120" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="70" x2="500" y2="70" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="20" x2="500" y2="20" stroke="#f0f0f0" stroke-width="1"/>
+
+        {% set n_months = trend_months|length %}
+        {% set slot_w = 470 / (n_months if n_months > 0 else 1) %}
+        
+        <!-- Bars for Sales -->
+        {% for m in trend_months %}
+          {% set x_pos = 40 + loop.index0 * slot_w + (slot_w * 0.15) %}
+          {% set bar_w = slot_w * 0.45 %}
+          {% set bar_h = (m.sales / max_trend_sales * 140) if max_trend_sales > 0 else 0 %}
+          {% set bar_y = 170 - bar_h %}
+          <rect class="trend-bar" x="{{ x_pos }}" y="{{ bar_y }}" width="{{ bar_w }}" height="{{ bar_h }}" rx="3">
+            <title>{{ m.label }}: Rs {{ '%.2f'|format(m.sales) }} sales</title>
+          </rect>
+          <!-- X-Axis Label -->
+          <text x="{{ x_pos + bar_w / 2 }}" y="188" text-anchor="middle" font-size="10.5" fill="#6b7280" font-family="inherit">{{ m.label }}</text>
+        {% endfor %}
+
+        <!-- Polyline for Commission -->
+        {% set points_str = [] %}
+        {% for m in trend_months %}
+          {% set x_pt = 40 + loop.index0 * slot_w + (slot_w * 0.37) %}
+          {% set y_pt = 170 - ((m.commission * 4 / max_trend_sales * 140) if max_trend_sales > 0 else 0) %}
+          {% set _ = points_str.append(x_pt ~ ',' ~ y_pt) %}
+        {% endfor %}
+        <polyline class="trend-line" points="{{ points_str|join(' ') }}"/>
+
+        <!-- Points for Commission -->
+        {% for m in trend_months %}
+          {% set x_pt = 40 + loop.index0 * slot_w + (slot_w * 0.37) %}
+          {% set y_pt = 170 - ((m.commission * 4 / max_trend_sales * 140) if max_trend_sales > 0 else 0) %}
+          <circle class="trend-point" cx="{{ x_pt }}" cy="{{ y_pt }}" r="4">
+            <title>{{ m.label }}: Rs {{ '%.2f'|format(m.commission) }} commission</title>
+          </circle>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <!-- Revenue Share Donut Chart -->
+    <div class="agent-chart-card">
+      <div class="agent-chart-header">
+        <div>
+          <h3>Revenue Share by Agent</h3>
+          <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Contribution to completed volume</p>
+        </div>
+      </div>
+
+      <div class="donut-chart-container">
+        <!-- SVG Donut -->
+        <div class="donut-svg-wrap">
+          <svg class="donut-svg" viewBox="0 0 42 42">
+            <!-- Background track -->
+            <circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#f3f4f6" stroke-width="4.5"></circle>
+            
+            {% set offset = namespace(val=0) %}
+            {% for share in agent_revenue_shares %}
+              {% set dash_val = share.share_pct %}
+              {% set rem_val = 100 - dash_val %}
+              {% if dash_val > 0 %}
+              <circle cx="21" cy="21" r="15.91549430918954" fill="transparent"
+                      stroke="{{ share.color }}" stroke-width="4.5"
+                      stroke-dasharray="{{ dash_val }} {{ rem_val }}"
+                      stroke-dashoffset="-{{ offset.val }}">
+                <title>{{ share.name }}: {{ share.share_pct }}% (Rs {{ '%.2f'|format(share.revenue) }})</title>
+              </circle>
+              {% set offset.val = offset.val + dash_val %}
+              {% endif %}
+            {% endfor %}
+          </svg>
+          <div class="donut-center-label">
+            <div class="donut-center-title">Total Sales</div>
+            <div class="donut-center-amount">Rs {{ '%.0f'|format(summary.completed_sales_revenue) }}</div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="donut-legend-list">
+          {% for share in agent_revenue_shares %}
+          <div class="donut-legend-row">
+            <div class="donut-legend-name">
+              <span class="legend-dot" style="background: {{ share.color }};"></span>
+              <span>{{ share.name }}</span>
+            </div>
+            <div class="donut-legend-pct">{{ share.share_pct }}%</div>
+          </div>
+          {% else %}
+          <div style="font-size: 12px; color: #9ca3af; text-align: center;">No agent sales recorded yet.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     TAB PANE 2: LEADERBOARD & SCORECARDS
+     ========================================================================= -->
+<div class="agent-tab-pane" id="paneLeaderboard">
+  <!-- Agent Leaderboard Table -->
+  <section class="admin-section" style="margin-bottom: 28px;">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <h2 style="margin: 0;">Agent leaderboard</h2>
+        <p style="margin: 4px 0 14px 0;">Ranked by completed-sale units, then revenue. Pending and cancelled sales do not earn commission here.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        {% if summary.commission_pending > 0 %}
+        <form method="post" action="{{ url_for('settle_agent_commission') }}" style="margin: 0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="settle_all" value="1">
+          <button type="submit" class="button button-dark" style="font-size: 11px; padding: 7px 14px;">Settle All Pending (Rs {{ '%.2f'|format(summary.commission_pending) }})</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank / Agent</th>
+            <th>Contact</th>
+            <th>Units sold</th>
+            <th>Sales (Rs)</th>
+            <th>Commission status</th>
+            <th>Attainment</th>
+            <th>Actions &amp; modules</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in leaderboard %}
+          <tr id="agent-{{ row.agent.id }}">
+            <td>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="font-size: 12px; color: #111;">#{{ loop.index }}</strong>
+                <div>
+                  <strong style="color: #111;">{{ row.agent.name }}</strong>
+                  {% if not row.agent.is_active %}<span style="font-size: 10px; color: #ef4444; margin-left: 4px;">(Inactive)</span>{% endif %}
+                </div>
+              </div>
+            </td>
+            <td>
+              <div>{{ row.agent.phone }}</div>
+              <small style="color: #6b7280;">{{ row.agent.email }}</small>
+            </td>
+            <td><strong>{{ row.units }}</strong></td>
+            <td>Rs {{ '%.2f'|format(row.revenue) }}</td>
+            <td>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <div><strong>Rs {{ '%.2f'|format(row.commission) }}</strong></div>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  {% if row.pending_commission > 0 %}
+                    <span class="commission-settle-badge pending">Pending Rs {{ '%.2f'|format(row.pending_commission) }}</span>
+                    <form method="post" action="{{ url_for('settle_agent_commission') }}" class="inline-settle-form">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="agent_id" value="{{ row.agent.id }}">
+                      <button type="submit" class="inline-settle-btn" title="Settle this agent's pending commissions">Settle</button>
+                    </form>
+                  {% else %}
+                    <span class="commission-settle-badge settled">All Settled</span>
+                  {% endif %}
+                </div>
+              </div>
+            </td>
+            <td>
+              <div style="min-width: 90px;">
+                <div style="font-size: 11px; font-weight: 600; color: #111;">{{ '%.1f'|format(row.target_attainment) }}%</div>
+                <div class="kpi-progress-bar-wrap" style="height: 4px; margin-top: 3px;">
+                  <div class="kpi-progress-bar-fill" style="width: {{ [row.target_attainment, 100]|min }}%;"></div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                {% for endpoint, label in [('admin_sales','Sales'),('admin_orders','Orders'),('admin_crm','CRM'),('admin_reports','Reports')] %}
+                <a href="{{ url_for(endpoint, agent_id=row.agent.id) }}" style="font-size: 11px; text-decoration: underline; color: #111;">{{ label }}</a>
+                {% endfor %}
+              </div>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align: center; color: #6b7280;">No agents registered yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Multi-Metric Comparison & Radar Spider Chart Row -->
+  <div class="agent-scorecards-grid">
+    <!-- Multi-Metric Comparison Cards -->
+    <div class="agent-chart-card">
+      <div class="agent-chart-header">
+        <div>
+          <h3>Agent Performance Scorecards</h3>
+          <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Evaluation across Sell-through, Completion, and Target Attainment</p>
+        </div>
+      </div>
+
+      <div class="scorecards-list">
+        {% for card in agent_scorecards %}
+        <div class="scorecard-agent-item">
+          <div class="scorecard-agent-top">
+            <span class="scorecard-agent-name">{{ card.agent.name }}</span>
+            <span class="scorecard-agent-stats">Rs {{ '%.2f'|format(card.revenue) }} · {{ card.units }} units</span>
+          </div>
+
+          <div class="multi-metric-bars">
+            <!-- Metric 1: Sell-through -->
+            <div class="metric-bar-row">
+              <span style="color: #4b5563;">Sell-Through</span>
+              <div class="metric-bar-track">
+                <div class="metric-bar-fill-dark" style="width: {{ [card.sell_through, 100]|min }}%;"></div>
+              </div>
+              <strong style="text-align: right;">{{ '%.0f'|format(card.sell_through) }}%</strong>
+            </div>
+
+            <!-- Metric 2: Completion Rate -->
+            <div class="metric-bar-row">
+              <span style="color: #4b5563;">Completion</span>
+              <div class="metric-bar-track">
+                <div class="metric-bar-fill-mid" style="width: {{ [card.completion_rate, 100]|min }}%;"></div>
+              </div>
+              <strong style="text-align: right;">{{ '%.0f'|format(card.completion_rate) }}%</strong>
+            </div>
+
+            <!-- Metric 3: Target Attainment -->
+            <div class="metric-bar-row">
+              <span style="color: #4b5563;">Target Attain.</span>
+              <div class="metric-bar-track">
+                <div class="metric-bar-fill-light" style="width: {{ [card.target_attainment, 100]|min }}%;"></div>
+              </div>
+              <strong style="text-align: right;">{{ '%.0f'|format(card.target_attainment) }}%</strong>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div style="font-size: 12px; color: #6b7280; text-align: center; padding: 20px;">No agent scorecard records available.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Interactive Radar / Spider Benchmark Chart -->
+    <div class="radar-chart-card">
+      <div>
+        <div class="agent-chart-header">
+          <div>
+            <h3>Benchmark Radar</h3>
+            <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Agent vs. Team Average</p>
+          </div>
+        </div>
+
+        <div class="radar-select-wrap">
+          <label for="radarAgentSelect" style="display: block; font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: #6b7280; margin-bottom: 5px;">Select Agent to Benchmark</label>
+          <select id="radarAgentSelect">
+            {% for card in agent_scorecards %}
+            <option value="{{ card.agent.id }}"
+                    data-sell="{{ card.sell_through }}"
+                    data-comp="{{ card.completion_rate }}"
+                    data-target="{{ [card.target_attainment, 100]|min }}"
+                    data-margin="{{ card.gross_margin_pct }}"
+                    data-volume="{{ [card.units * 10, 100]|min }}">
+              {{ card.agent.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <!-- Pure SVG Radar Web Chart (Center 110, 110 with radius 75) -->
+      <div class="radar-svg-box">
+        <svg width="220" height="220" viewBox="0 0 220 220" role="img" aria-label="Agent benchmark radar web chart">
+          <!-- Web concentric polygons (25%, 50%, 75%, 100%) -->
+          <polygon points="110,35 181,87 154,170 66,170 39,87" fill="none" stroke="#e5e7eb" stroke-width="1"/>
+          <polygon points="110,54 163,93 143,155 77,155 57,93" fill="none" stroke="#f0f0f0" stroke-width="1"/>
+          <polygon points="110,72 146,98 132,140 88,140 74,98" fill="none" stroke="#f5f5f5" stroke-width="1"/>
+
+          <!-- Axis lines -->
+          <line x1="110" y1="110" x2="110" y2="35" stroke="#e5e7eb" stroke-width="1"/>
+          <line x1="110" y1="110" x2="181" y2="87" stroke="#e5e7eb" stroke-width="1"/>
+          <line x1="110" y1="110" x2="154" y2="170" stroke="#e5e7eb" stroke-width="1"/>
+          <line x1="110" y1="110" x2="66" y2="170" stroke="#e5e7eb" stroke-width="1"/>
+          <line x1="110" y1="110" x2="39" y2="87" stroke="#e5e7eb" stroke-width="1"/>
+
+          <!-- Axis Labels -->
+          <text x="110" y="24" text-anchor="middle" font-size="8.5" fill="#6b7280" font-weight="600">Sell-thru</text>
+          <text x="190" y="85" text-anchor="start" font-size="8.5" fill="#6b7280" font-weight="600">Completion</text>
+          <text x="160" y="185" text-anchor="middle" font-size="8.5" fill="#6b7280" font-weight="600">Attainment</text>
+          <text x="55" y="185" text-anchor="middle" font-size="8.5" fill="#6b7280" font-weight="600">Margin</text>
+          <text x="28" y="85" text-anchor="end" font-size="8.5" fill="#6b7280" font-weight="600">Volume</text>
+
+          <!-- Team Benchmark Polygon (Dashed Gray) -->
+          <polygon class="radar-polygon-benchmark" points="110,58 155,95 140,150 80,150 62,95" />
+
+          <!-- Dynamic Selected Agent Polygon (Solid Black) -->
+          <polygon id="radarAgentPolygon" class="radar-polygon-agent" points="110,48 165,90 148,158 75,158 52,90" />
+        </svg>
+      </div>
+
+      <div class="chart-legend" style="justify-content: center; margin-top: 10px;">
+        <div class="legend-item"><span class="legend-dot" style="background: #111111;"></span><span>Selected Agent</span></div>
+        <div class="legend-item"><span class="legend-dot" style="background: #9ca3af; border: 1px dashed #6b7280;"></span><span>Team Avg Benchmark</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     TAB PANE 3: ISSUE STOCK & ADD AGENT
+     ========================================================================= -->
+<div class="agent-tab-pane" id="paneStock">
+  <div style="display: grid; grid-template-columns: 1fr 1.6fr; gap: 24px; align-items: start;">
+    <!-- Add Agent Form -->
+    <section class="admin-section">
+      <h2>Add agent</h2>
+      <p style="font-size: 11px; color: #6b7280; margin: 4px 0 14px 0;">Create a new agent profile for stock issue and sales recording.</p>
+      <form method="post" action="{{ url_for('create_agent') }}" class="product-editor-grid" style="grid-template-columns: 1fr; gap: 12px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Name<input name="name" maxlength="140" required placeholder="Agent full name"></label>
+        <label>Phone<input name="phone" maxlength="40" placeholder="e.g. 9800000000"></label>
+        <label>Email<input name="email" type="email" maxlength="255" placeholder="agent@example.com"></label>
+        <button class="button button-dark" style="margin-top: 6px;">Add agent</button>
+      </form>
+    </section>
+
+    <!-- Issue Products to Agent Form -->
+    <section class="admin-section">
+      <h2>Issue products to an agent</h2>
+      <p style="font-size: 11px; color: #6b7280; margin: 4px 0 14px 0;">Issuing stock moves it out of warehouse availability. Selling allocated stock does not deduct warehouse stock again.</p>
+      
+      <form method="post" action="{{ url_for('allocate_agent_stock') }}" class="product-editor-grid" data-variant-sale style="grid-template-columns: 1fr 1fr; gap: 14px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        
+        <label style="grid-column: 1 / -1;">Agent
+          <select name="agent_id" required>
+            <option value="">Choose agent</option>
+            {% for agent in agents %}
+            <option value="{{ agent.id }}">{{ agent.name }} {% if not agent.is_active %}(Inactive){% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label style="grid-column: 1 / -1;">Product
+          <select name="product_id" required data-variant-product>
+            <option value="">Choose product</option>
+            {% for product in products %}
+            <option value="{{ product.id }}" data-sizes="{{ product.size_variations }}" data-colors='{{ product_colors(product)|tojson }}'>
+              {{ product.name }} — Rs {{ product.price }} ({{ product.stock_quantity }} available)
+            </option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label>Size
+          <select name="size_variation" data-variant-size></select>
+        </label>
+        
+        <label>Color
+          <select name="color_variation" data-variant-color></select>
+        </label>
+
+        <label>Quantity
+          <input name="quantity" type="number" min="1" value="1" required>
+        </label>
+        
+        <label>Company discount (%)
+          <input name="company_discount_percent" type="number" min="0" max="100" step="0.01" value="10" required>
+        </label>
+
+        <div style="grid-column: 1 / -1; margin-top: 6px;">
+          <button class="button button-dark" style="width: 100%;">Issue stock</button>
+        </div>
+      </form>
+    </section>
+  </div>
+</div>
+
+<!-- =========================================================================
+     TAB PANE 4: LEDGERS & SETTLEMENT
+     ========================================================================= -->
+<div class="agent-tab-pane" id="paneLedgers">
+  <!-- Products Taken / Acquisition Ledger -->
+  <section class="admin-section" style="margin-bottom: 32px;">
+    <h2>Products taken / acquisition ledger</h2>
+    <p style="font-size: 11px; color: #6b7280; margin: 4px 0 14px 0;">All warehouse stock issuance batches allocated to agents.</p>
+    
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Allocation / Date</th>
+            <th>Agent</th>
+            <th>Product / Variant</th>
+            <th>Issued / Remaining</th>
+            <th>List price</th>
+            <th>Company discount</th>
+            <th>Acquisition cost / unit</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in allocations %}
+          <tr>
+            <td>#{{ a.id }} <small style="display: block; color: #6b7280;">{{ a.created_at.strftime('%Y-%m-%d') if a.created_at else '' }}</small></td>
+            <td><strong>{{ a.agent.name }}</strong></td>
+            <td>{{ a.product.name }} / {{ a.size_variation or '-' }} / {{ a.color_variation or '-' }}</td>
+            <td><strong>{{ a.quantity }}</strong> / <span style="color: #4b5563;">{{ a.remaining }} left</span></td>
+            <td>Rs {{ a.list_price }}</td>
+            <td>{{ a.company_discount_percent }}%</td>
+            <td><strong>Rs {{ a.unit_cost }}</strong></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" style="text-align: center; color: #6b7280;">No stock issued yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Agent Sales & Commission Ledger -->
+  <section class="admin-section">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px;">
+      <div>
+        <h2 style="margin: 0;">Agent sales &amp; commission ledger</h2>
+        <p style="font-size: 11px; color: #6b7280; margin: 4px 0 14px 0;">Track earned commissions and settle payouts directly.</p>
+      </div>
+      <div>
+        <a class="button button-outline" href="{{ url_for('admin_sales') }}">Record an agent sale ↗</a>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Order / Agent</th>
+            <th>Status</th>
+            <th>Product / Variant</th>
+            <th>Units</th>
+            <th>Acquisition / unit</th>
+            <th>Sold / unit</th>
+            <th>Commission</th>
+            <th>Settlement</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for order in agent_orders %}
+            {% for item in order.items %}
+            <tr>
+              <td>
+                #{{ order.id }}
+                <strong style="display: block; color: #111;">{{ order.agent.name if order.agent else 'Unassigned' }}</strong>
+                <small style="color: #6b7280;">{{ order.created_at.strftime('%Y-%m-%d') if order.created_at else '' }}</small>
+              </td>
+              <td>
+                <span class="badge-role-tag {% if order.status == 'Completed' %}admin-tag{% endif %}">{{ order.status }}</span>
+              </td>
+              <td>{{ item.product.name }} / {{ item.size_variation or '-' }} / {{ item.color_variation or '-' }}</td>
+              <td><strong>{{ item.quantity }}</strong></td>
+              <td>Rs {{ item.agent_unit_cost }} <small style="color: #6b7280;">({{ item.company_discount_percent }}% off)</small></td>
+              <td>Rs {{ item.price_at_purchase }}</td>
+              <td>
+                <strong>Rs {{ item.commission_amount }}</strong>
+                <small style="display: block; color: #6b7280;">({{ item.commission_percent }}%)</small>
+                {% if order.status != 'Completed' %}
+                <small style="color: #92400e;">(Not earned)</small>
+                {% endif %}
+              </td>
+              <td>
+                {% if order.status == 'Completed' %}
+                  {% if item.is_commission_settled %}
+                    <span class="commission-settle-badge settled">Settled</span>
+                  {% else %}
+                    <span class="commission-settle-badge pending">Pending</span>
+                    <form method="post" action="{{ url_for('settle_agent_commission') }}" class="inline-settle-form">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="order_id" value="{{ order.id }}">
+                      <button type="submit" class="inline-settle-btn">Settle</button>
+                    </form>
+                  {% endif %}
+                {% else %}
+                  <span style="font-size: 11px; color: #9ca3af;">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+          <tr><td colspan="8" style="text-align: center; color: #6b7280;">No agent sales yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<!-- =========================================================================
+     CLIENT JAVASCRIPT: TAB SWITCHING & RADAR BENCHMARK INTERACTION
+     ========================================================================= -->
+<script>
+(function() {
+  /* --- 1. Tab Navigation Controller --- */
+  var tabButtons = document.querySelectorAll('.agent-tab-btn');
+  var tabPanes = document.querySelectorAll('.agent-tab-pane');
+
+  function activateTab(targetPaneId) {
+    tabButtons.forEach(function(btn) {
+      if (btn.getAttribute('data-tab') === targetPaneId) {
+        btn.classList.add('active');
+        btn.setAttribute('aria-selected', 'true');
+      } else {
+        btn.classList.remove('active');
+        btn.setAttribute('aria-selected', 'false');
+      }
+    });
+
+    tabPanes.forEach(function(pane) {
+      if (pane.id === targetPaneId) {
+        pane.classList.add('active');
+      } else {
+        pane.classList.remove('active');
+      }
+    });
+  }
+
+  tabButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var targetId = this.getAttribute('data-tab');
+      activateTab(targetId);
+      // Sync URL hash
+      if (targetId === 'paneAnalytics') history.replaceState(null, '', '#analytics');
+      else if (targetId === 'paneLeaderboard') history.replaceState(null, '', '#leaderboard');
+      else if (targetId === 'paneStock') history.replaceState(null, '', '#stock');
+      else if (targetId === 'paneLedgers') history.replaceState(null, '', '#ledgers');
+    });
+  });
+
+  // Handle URL hash on load
+  var hash = window.location.hash;
+  if (hash === '#leaderboard') activateTab('paneLeaderboard');
+  else if (hash === '#stock') activateTab('paneStock');
+  else if (hash === '#ledgers') activateTab('paneLedgers');
+  else if (hash === '#analytics') activateTab('paneAnalytics');
+
+  /* --- 2. Radar Spider Benchmark Chart Controller --- */
+  var radarSelect = document.getElementById('radarAgentSelect');
+  var radarPolygon = document.getElementById('radarAgentPolygon');
+
+  function updateRadarChart() {
+    if (!radarSelect || !radarPolygon) return;
+    var opt = radarSelect.options[radarSelect.selectedIndex];
+    if (!opt) return;
+
+    var sell = parseFloat(opt.getAttribute('data-sell') || 0) / 100;
+    var comp = parseFloat(opt.getAttribute('data-comp') || 0) / 100;
+    var target = parseFloat(opt.getAttribute('data-target') || 0) / 100;
+    var margin = parseFloat(opt.getAttribute('data-margin') || 0) / 100;
+    var volume = parseFloat(opt.getAttribute('data-volume') || 0) / 100;
+
+    // Center = (110, 110), Max Radius = 75
+    // Axis 0 (Top - Sell-Through): Angle = -90 deg
+    var x0 = 110;
+    var y0 = 110 - (sell * 75);
+
+    // Axis 1 (Top-Right - Completion): Angle = -18 deg
+    var rad1 = -18 * (Math.PI / 180);
+    var x1 = 110 + (comp * 75 * Math.cos(rad1));
+    var y1 = 110 + (comp * 75 * Math.sin(rad1));
+
+    // Axis 2 (Bottom-Right - Attainment): Angle = 54 deg
+    var rad2 = 54 * (Math.PI / 180);
+    var x2 = 110 + (target * 75 * Math.cos(rad2));
+    var y2 = 110 + (target * 75 * Math.sin(rad2));
+
+    // Axis 3 (Bottom-Left - Margin): Angle = 126 deg
+    var rad3 = 126 * (Math.PI / 180);
+    var x3 = 110 + (margin * 75 * Math.cos(rad3));
+    var y3 = 110 + (margin * 75 * Math.sin(rad3));
+
+    // Axis 4 (Top-Left - Volume): Angle = 198 deg
+    var rad4 = 198 * (Math.PI / 180);
+    var x4 = 110 + (volume * 75 * Math.cos(rad4));
+    var y4 = 110 + (volume * 75 * Math.sin(rad4));
+
+    var pointsStr = [
+      Math.round(x0) + ',' + Math.round(y0),
+      Math.round(x1) + ',' + Math.round(y1),
+      Math.round(x2) + ',' + Math.round(y2),
+      Math.round(x3) + ',' + Math.round(y3),
+      Math.round(x4) + ',' + Math.round(y4)
+    ].join(' ');
+
+    radarPolygon.setAttribute('points', pointsStr);
+  }
+
+  if (radarSelect) {
+    radarSelect.addEventListener('change', updateRadarChart);
+    updateRadarChart();
+  }
+})();
+</script>
 {% endblock %}

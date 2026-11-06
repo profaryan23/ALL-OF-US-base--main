@@ -468,6 +468,7 @@ class Agent(Base):
     phone: Mapped[str] = mapped_column(String(40), default="")
     email: Mapped[str] = mapped_column(String(255), default="")
     profile_image: Mapped[str] = mapped_column(String(255), default="")
+    monthly_target: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("50000.00"))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -540,6 +541,8 @@ class OrderItem(Base):
     company_discount_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
     commission_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0.00"))
     commission_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal("0.00"))
+    is_commission_settled: Mapped[bool] = mapped_column(Boolean, default=False)
+    commission_settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     price_at_purchase: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     order: Mapped[Order] = relationship(back_populates="items")
     product: Mapped[Product] = relationship()
@@ -800,6 +803,11 @@ def migrate_accounting_schema():
         "agents": {
             "profile_image": "VARCHAR(255) NOT NULL DEFAULT ''",
             "user_id": "INTEGER REFERENCES users(id)",
+            "monthly_target": "NUMERIC(10, 2) NOT NULL DEFAULT 50000.00",
+        },
+        "order_items": {
+            "is_commission_settled": "BOOLEAN NOT NULL DEFAULT FALSE" if is_postgres else "BOOLEAN NOT NULL DEFAULT 0",
+            "commission_settled_at": "TIMESTAMP" if is_postgres else "DATETIME",
         },
         "accounts": {
             "code": "VARCHAR(32) NOT NULL DEFAULT ''",
@@ -2540,19 +2548,248 @@ async def create_user_account(request: Request, _admin: Annotated[User, Depends(
 @app.get("/admin/agents", name="admin_agents", response_class=HTMLResponse)
 def admin_agents(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     agents = db.query(Agent).order_by(Agent.name).all()
-    sales = db.query(Order).filter(Order.agent_id.is_not(None), Order.status == "Completed").all()
-    rows = []
-    for agent in agents:
-        orders = [o for o in sales if o.agent_id == agent.id]
-        items = [i for o in orders for i in o.items]
-        rows.append({"agent": agent, "units": sum(i.quantity for i in items),
-                     "revenue": sum((o.total_amount for o in orders), Decimal("0.00")),
-                     "commission": sum((i.commission_amount for i in items), Decimal("0.00"))})
-    rows.sort(key=lambda row: (row["units"], row["revenue"]), reverse=True)
-    return page(request, "admin_agents.html", leaderboard=rows,
-                allocations=db.query(AgentAllocation).order_by(AgentAllocation.id.desc()).all(),
-                agent_orders=db.query(Order).filter(Order.agent_id.is_not(None)).order_by(Order.id.desc()).all(),
-                products=db.query(Product).filter_by(is_active=True).order_by(Product.name).all())
+    all_agent_orders = db.query(Order).filter(Order.agent_id.is_not(None)).order_by(Order.id.desc()).all()
+    allocations = db.query(AgentAllocation).order_by(AgentAllocation.id.desc()).all()
+    products = db.query(Product).filter_by(is_active=True).order_by(Product.name).all()
+
+    completed_orders = [o for o in all_agent_orders if o.status == "Completed"]
+    pending_orders = [o for o in all_agent_orders if o.status not in ("Completed", "Cancelled")]
+
+    # 1. Top Summary KPI Calculations
+    active_agents_count = sum(1 for a in agents if a.is_active)
+    total_agents_count = len(agents)
+
+    stock_with_agents_units = sum(a.remaining for a in allocations)
+    total_stock_issued_units = sum(a.quantity for a in allocations)
+    units_sold_total = max(0, total_stock_issued_units - stock_with_agents_units)
+
+    completed_sales_revenue = sum((o.total_amount for o in completed_orders), Decimal("0.00"))
+    completed_sales_orders_count = len(completed_orders)
+
+    # Commission breakdown: settled vs pending vs projected
+    commission_settled = Decimal("0.00")
+    commission_pending = Decimal("0.00")
+    commission_projected = Decimal("0.00")
+
+    for o in completed_orders:
+        for item in o.items:
+            comm = item.commission_amount or Decimal("0.00")
+            if getattr(item, "is_commission_settled", False):
+                commission_settled += comm
+            else:
+                commission_pending += comm
+
+    for o in pending_orders:
+        for item in o.items:
+            comm = item.commission_amount or Decimal("0.00")
+            commission_projected += comm
+
+    total_commission_earned = commission_settled + commission_pending
+
+    # 2. Performance Overview Metrics
+    sell_through_rate = round((units_sold_total / total_stock_issued_units * 100), 1) if total_stock_issued_units > 0 else 0.0
+    completion_rate = round((len(completed_orders) / len(all_agent_orders) * 100), 1) if all_agent_orders else 0.0
+
+    total_team_target = sum((getattr(a, "monthly_target", Decimal("50000.00")) or Decimal("50000.00") for a in agents), Decimal("0.00"))
+    target_attainment_pct = round((completed_sales_revenue / total_team_target * 100), 1) if total_team_target > 0 else 0.0
+
+    # Gross Margin after company discounts
+    total_selling_price = Decimal("0.00")
+    total_agent_cost = Decimal("0.00")
+    for o in completed_orders:
+        for item in o.items:
+            total_selling_price += ((item.price_at_purchase or Decimal("0.00")) * item.quantity)
+            total_agent_cost += ((item.agent_unit_cost or Decimal("0.00")) * item.quantity)
+    gross_margin_amount = max(Decimal("0.00"), total_selling_price - total_agent_cost)
+    gross_margin_pct = round((gross_margin_amount / total_selling_price * 100), 1) if total_selling_price > 0 else 0.0
+
+    # 3. Individual Agent Scorecards & Visual Distribution
+    palette = ["#111111", "#374151", "#4b5563", "#6b7280", "#9ca3af", "#1f2937", "#172554", "#0f172a"]
+    leaderboard = []
+    agent_scorecards = []
+    agent_revenue_shares = []
+
+    for idx, agent in enumerate(agents):
+        a_orders = [o for o in completed_orders if o.agent_id == agent.id]
+        a_all_orders = [o for o in all_agent_orders if o.agent_id == agent.id]
+        a_items = [i for o in a_orders for i in o.items]
+        a_allocations = [al for al in allocations if al.agent_id == agent.id]
+
+        a_units = sum(i.quantity for i in a_items)
+        a_revenue = sum((o.total_amount for o in a_orders), Decimal("0.00"))
+        a_commission = sum((i.commission_amount for i in a_items), Decimal("0.00"))
+        a_pending_comm = sum((i.commission_amount for i in a_items if not getattr(i, "is_commission_settled", False)), Decimal("0.00"))
+        a_settled_comm = sum((i.commission_amount for i in a_items if getattr(i, "is_commission_settled", False)), Decimal("0.00"))
+
+        a_issued_units = sum(al.quantity for al in a_allocations)
+        a_remaining_units = sum(al.remaining for al in a_allocations)
+        a_sold_units = max(0, a_issued_units - a_remaining_units)
+
+        a_sell_through = round((a_sold_units / a_issued_units * 100), 1) if a_issued_units > 0 else (100.0 if a_units > 0 else 0.0)
+        a_completion_rate = round((len(a_orders) / len(a_all_orders) * 100), 1) if a_all_orders else 0.0
+        a_target = getattr(agent, "monthly_target", Decimal("50000.00")) or Decimal("50000.00")
+        a_attainment = round((a_revenue / a_target * 100), 1) if a_target > 0 else 0.0
+
+        a_selling_subtotal = sum(((i.price_at_purchase or Decimal("0.00")) * i.quantity for i in a_items), Decimal("0.00"))
+        a_cost_subtotal = sum(((i.agent_unit_cost or Decimal("0.00")) * i.quantity for i in a_items), Decimal("0.00"))
+        a_margin_pct = round(((a_selling_subtotal - a_cost_subtotal) / a_selling_subtotal * 100), 1) if a_selling_subtotal > 0 else 0.0
+
+        card_data = {
+            "agent": agent,
+            "units": a_units,
+            "revenue": a_revenue,
+            "commission": a_commission,
+            "pending_commission": a_pending_comm,
+            "settled_commission": a_settled_comm,
+            "sell_through": min(a_sell_through, 100.0),
+            "completion_rate": min(a_completion_rate, 100.0),
+            "target_attainment": a_attainment,
+            "target": a_target,
+            "gross_margin_pct": a_margin_pct,
+            "stock_remaining": a_remaining_units,
+            "stock_issued": a_issued_units,
+            "color": palette[idx % len(palette)],
+        }
+        agent_scorecards.append(card_data)
+
+        leaderboard.append({
+            "agent": agent,
+            "units": a_units,
+            "revenue": a_revenue,
+            "commission": a_commission,
+            "pending_commission": a_pending_comm,
+            "settled_commission": a_settled_comm,
+            "sell_through": min(a_sell_through, 100.0),
+            "completion_rate": min(a_completion_rate, 100.0),
+            "target_attainment": a_attainment,
+        })
+
+    leaderboard.sort(key=lambda row: (row["units"], row["revenue"]), reverse=True)
+    agent_scorecards.sort(key=lambda s: s["revenue"], reverse=True)
+
+    # Donut slices for revenue share
+    for s in agent_scorecards:
+        if completed_sales_revenue > 0:
+            share_pct = round(float(s["revenue"] / completed_sales_revenue * 100), 1)
+        else:
+            share_pct = round(100.0 / len(agents), 1) if agents else 0.0
+        agent_revenue_shares.append({
+            "name": s["agent"].name,
+            "revenue": s["revenue"],
+            "share_pct": share_pct,
+            "color": s["color"],
+        })
+
+    # 4. Past 6-Month Trend Data for Sales & Commission
+    now = datetime.utcnow()
+    trend_months = []
+    for i in range(5, -1, -1):
+        # approximate month stepping
+        year = now.year
+        month = now.month - i
+        while month <= 0:
+            month += 12
+            year -= 1
+        m_orders = [o for o in completed_orders if o.created_at and o.created_at.year == year and o.created_at.month == month]
+        m_sales = sum((o.total_amount for o in m_orders), Decimal("0.00"))
+        m_comm = sum((item.commission_amount for o in m_orders for item in o.items), Decimal("0.00"))
+        month_name = datetime(year, month, 1).strftime("%b")
+        trend_months.append({
+            "label": month_name,
+            "year": year,
+            "sales": float(m_sales),
+            "commission": float(m_comm),
+        })
+
+    max_trend_sales = max([m["sales"] for m in trend_months] + [100.0])
+
+    # Team Benchmark Averages for Radar Chart
+    team_averages = {
+        "sell_through": sell_through_rate,
+        "completion_rate": completion_rate,
+        "target_attainment": min(target_attainment_pct, 100.0),
+        "gross_margin": gross_margin_pct,
+        "sales_volume_index": 70.0 if completed_sales_orders_count > 0 else 20.0,
+    }
+
+    summary = {
+        "active_agents_count": active_agents_count,
+        "total_agents_count": total_agents_count,
+        "stock_with_agents_units": stock_with_agents_units,
+        "total_stock_issued_units": total_stock_issued_units,
+        "units_sold_total": units_sold_total,
+        "completed_sales_revenue": completed_sales_revenue,
+        "completed_sales_orders_count": completed_sales_orders_count,
+        "commission_settled": commission_settled,
+        "commission_pending": commission_pending,
+        "commission_projected": commission_projected,
+        "total_commission_earned": total_commission_earned,
+    }
+
+    performance = {
+        "sell_through_rate": sell_through_rate,
+        "completion_rate": completion_rate,
+        "target_attainment_pct": target_attainment_pct,
+        "gross_margin_amount": gross_margin_amount,
+        "gross_margin_pct": gross_margin_pct,
+        "total_team_target": total_team_target,
+    }
+
+    return page(request, "admin_agents.html",
+                summary=summary,
+                performance=performance,
+                leaderboard=leaderboard,
+                agent_scorecards=agent_scorecards,
+                agent_revenue_shares=agent_revenue_shares,
+                trend_months=trend_months,
+                max_trend_sales=max_trend_sales,
+                team_averages=team_averages,
+                allocations=allocations,
+                agent_orders=all_agent_orders,
+                agents=agents,
+                products=products)
+
+
+@app.post("/admin/agents/settle-commission", name="settle_agent_commission", dependencies=[Depends(verify_csrf)])
+async def settle_agent_commission(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
+    form = await request.form()
+    agent_id_raw = form.get("agent_id")
+    order_id_raw = form.get("order_id")
+    settle_all = form.get("settle_all") == "1"
+
+    now = datetime.utcnow()
+    settled_count = 0
+    total_settled_amount = Decimal("0.00")
+
+    query = db.query(OrderItem).join(Order).filter(Order.status == "Completed")
+    if agent_id_raw:
+        query = query.filter(Order.agent_id == int(agent_id_raw))
+    elif order_id_raw:
+        query = query.filter(OrderItem.order_id == int(order_id_raw))
+    elif not settle_all:
+        request.session["flash"] = ["error", "Select an agent or order to settle commission."]
+        return RedirectResponse("/admin/agents#ledgers", status_code=303)
+
+    query = query.filter(OrderItem.is_commission_settled.is_(False))
+    items_to_settle = query.all()
+
+    for item in items_to_settle:
+        item.is_commission_settled = True
+        item.commission_settled_at = now
+        settled_count += 1
+        total_settled_amount += (item.commission_amount or Decimal("0.00"))
+
+    create_activity_log(
+        db,
+        actor=_admin,
+        module="agents",
+        action="commission_settled",
+        entity_type="commission",
+        details=f"Settled Rs {total_settled_amount:.2f} commission across {settled_count} item(s)."
+    )
+    db.commit()
+    request.session["flash"] = ["success", f"Successfully settled Rs {total_settled_amount:.2f} in commission across {settled_count} item(s)."]
+    return RedirectResponse("/admin/agents#ledgers", status_code=303)
 
 
 @app.post("/admin/agents", name="create_agent", dependencies=[Depends(verify_csrf)])
