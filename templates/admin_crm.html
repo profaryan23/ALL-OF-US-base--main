@@ -1,9 +1,734 @@
 {% extends "admin_base.html" %}
-{% block module_title %}CRM{% endblock %}{% block module_heading %}Customer book{% endblock %}
+{% block module_title %}CRM{% endblock %}
+{% block module_heading %}Customer Relationship & Analytics{% endblock %}
+
 {% block module_content %}
-<section class="metrics-grid crm-metrics"><article class="metric metric-dark"><span>Total customers</span><strong>{{ customer_count }}</strong><small>Across the community</small></article><article class="metric metric-mid"><span>Marketing opt-in</span><strong>{{ opt_in_percent }}%</strong><small>{{ opt_in_count }} opted-in contacts</small></article><article class="metric metric-light"><span>Total revenue</span><strong>Rs {{ '%.0f'|format(revenue) }}</strong><small>Across all orders</small></article><article class="metric metric-mid"><span>Average customer value</span><strong>Rs {{ '%.0f'|format(average_value) }}</strong><small>Lifetime spend to date</small></article></section>
-<section class="clv-distribution"><div class="clv-heading"><p class="eyebrow">Customer lifetime value</p><span>Spend distribution</span></div>{% for band in clv_distribution %}<div class="clv-band"><div><strong>{{ band.count }}</strong><span>{{ band.label }}</span></div><span class="clv-track"><i style="width:{{ band.percent }}%"></i></span></div>{% endfor %}</section>
-<section class="admin-section"><div class="admin-section-head"><div><p class="eyebrow">Contact and purchase history</p><h2>Customers</h2></div><a class="button button-outline" href="{{ url_for('export_customers', **filters) }}">↓ Export CSV</a></div>
-<form class="filter-bar" method="get" action="{{ url_for('admin_crm') }}">{% include 'agent_filter.html' %}<label>Marketing<select name="opt_in"><option value="">Everyone</option><option value="yes" {% if filters.get('opt_in') == 'yes' %}selected{% endif %}>Opted in</option><option value="no" {% if filters.get('opt_in') == 'no' %}selected{% endif %}>Not opted in</option></select></label><label>Purchase history<select name="purchased"><option value="">Any history</option><option value="yes" {% if filters.get('purchased') == 'yes' %}selected{% endif %}>Has orders</option><option value="no" {% if filters.get('purchased') == 'no' %}selected{% endif %}>No orders</option></select></label><label>Minimum spend<input name="min_spend" type="number" min="0" step="1" placeholder="Rs 0" value="{{ filters.get('min_spend', '') }}"></label><button class="button button-dark filter-submit" type="submit">Apply filters</button><a class="clear-filter" href="{{ url_for('admin_crm') }}">Clear</a></form>
-<div class="table-wrap"><table><thead><tr><th>Customer</th><th>Contact</th><th>Joined</th><th>Orders</th><th>Total spend</th><th>Marketing</th></tr></thead><tbody>{% for row in customer_rows %}<tr id="customer-{{ row.customer.id }}"><td class="customer-name">{{ row.customer.first_name }} {{ row.customer.last_name }}<small>Agents: {{ row.agent_names or 'Direct sales' }}</small></td><td>{{ row.customer.email }}<small>{{ row.customer.phone or 'No phone' }}</small></td><td>{{ row.customer.created_at.strftime('%b %d, %Y') }}</td><td>{{ row.order_count }}</td><td>Rs {{ '%.2f'|format(row.spend) }}</td><td>{{ 'Yes' if row.customer.marketing_opt_in else 'No' }}</td></tr>{% else %}<tr><td colspan="6" class="table-empty">No customers match these filters.</td></tr>{% endfor %}</tbody></table></div></section>
+<link rel="stylesheet" href="{{ url_for('static', filename='crm.css') }}">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+<div class="crm-container">
+
+  <!-- ========================================================================
+       TOP CONTROL & TIME-WINDOW FILTER BAR
+       ======================================================================== -->
+  <div class="crm-top-bar">
+    <div class="crm-time-window-group">
+      <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #777; margin-right: 4px;">Time Window:</span>
+      <button type="button" class="crm-time-pill {% if selected_window == '7D' %}active{% endif %}" data-window="7D">7D</button>
+      <button type="button" class="crm-time-pill {% if selected_window == '30D' %}active{% endif %}" data-window="30D">30D</button>
+      <button type="button" class="crm-time-pill {% if selected_window == 'YTD' %}active{% endif %}" data-window="YTD">YTD</button>
+      <button type="button" class="crm-time-pill {% if selected_window == 'ALL' %}active{% endif %}" data-window="ALL">All Time</button>
+      <button type="button" class="crm-time-pill {% if selected_window == 'CUSTOM' %}active{% endif %}" data-window="custom">Custom ▾</button>
+    </div>
+
+    <!-- Custom Date Range Popover Panel -->
+    <div class="crm-custom-date-panel" id="crm-custom-date-panel">
+      <label style="font-size: 10px; color: #555;">Start: <input type="date" id="crm-custom-start-date" value="{{ filters.get('start_date', '') }}"></label>
+      <label style="font-size: 10px; color: #555;">End: <input type="date" id="crm-custom-end-date" value="{{ filters.get('end_date', '') }}"></label>
+      <button type="button" class="crm-btn-primary" id="crm-apply-custom-date" style="padding: 4px 8px;">Apply</button>
+    </div>
+
+    <div class="crm-top-actions">
+      <button type="button" class="crm-btn-secondary" onclick="window.crmToggleCompare()" id="crm-compare-trigger-btn">
+        ⇄ Compare Segments
+      </button>
+      <button type="button" class="crm-btn-primary" onclick="window.crmOpenSegmentModal()">
+        + Smart Segment
+      </button>
+      <a href="{{ url_for('export_customers') }}" class="crm-btn-secondary" id="crm-export-csv-btn">
+        ↓ Export CSV
+      </a>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       A. GLOBAL KPI METRIC CARDS (TOP HEADER AREA)
+       ======================================================================== -->
+  <div class="crm-kpi-grid">
+    <!-- Card 1: Total Customers -->
+    <div class="crm-kpi-card">
+      <div>
+        <div class="crm-kpi-head">
+          <h4 class="crm-kpi-title">Total Customers</h4>
+          <span class="crm-kpi-badge {% if analytics.kpi.mom_growth_pct < 0 %}negative{% endif %}">
+            {{ '+' if analytics.kpi.mom_growth_pct > 0 else '' }}{{ analytics.kpi.mom_growth_pct }}% MoM
+          </span>
+        </div>
+        <div class="crm-kpi-val">{{ analytics.kpi.total_customers }}</div>
+        <div class="crm-kpi-sub">+{{ analytics.kpi.net_additions }} net additions in period</div>
+      </div>
+      <!-- Marketing Consent Breakdown Chips -->
+      <div>
+        <div class="crm-optin-strip">
+          <div class="crm-optin-chip" data-optin-key="subscribed" onclick="window.crmFilterByOptIn('subscribed')">
+            <span>Subscribed</span>
+            <strong>{{ analytics.kpi.opt_in_breakdown.subscribed }} <small style="color: #666; font-weight: normal;">({{ analytics.kpi.opt_in_breakdown.subscribed_pct }}%)</small></strong>
+          </div>
+          <div class="crm-optin-chip" data-optin-key="not_opted_in" onclick="window.crmFilterByOptIn('not_opted_in')">
+            <span>Not Opted-in</span>
+            <strong>{{ analytics.kpi.opt_in_breakdown.not_opted_in }} <small style="color: #666; font-weight: normal;">({{ analytics.kpi.opt_in_breakdown.not_opted_in_pct }}%)</small></strong>
+          </div>
+          <div class="crm-optin-chip" data-optin-key="unsubscribed" onclick="window.crmFilterByOptIn('unsubscribed')">
+            <span>Unsubscribed</span>
+            <strong>{{ analytics.kpi.opt_in_breakdown.unsubscribed }} <small style="color: #666; font-weight: normal;">({{ analytics.kpi.opt_in_breakdown.unsubscribed_pct }}%)</small></strong>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Total Revenue -->
+    <div class="crm-kpi-card">
+      <div>
+        <div class="crm-kpi-head">
+          <h4 class="crm-kpi-title">Period Revenue</h4>
+          <span class="crm-kpi-badge {% if analytics.kpi.revenue_comparison_pct < 0 %}negative{% endif %}">
+            {{ '+' if analytics.kpi.revenue_comparison_pct > 0 else '' }}{{ analytics.kpi.revenue_comparison_pct }}% vs prev
+          </span>
+        </div>
+        <div class="crm-kpi-val">Rs {{ '%.2f'|format(analytics.kpi.total_revenue) }}</div>
+        <div class="crm-kpi-sub">Across {{ analytics.kpi.total_orders }} orders · Avg Rs {{ '%.2f'|format(analytics.kpi.total_revenue / analytics.kpi.total_orders if analytics.kpi.total_orders > 0 else 0.0) }} / order</div>
+      </div>
+      <div style="border-top: 1px solid var(--crm-line); padding-top: 10px; font-size: 10.5px; color: var(--crm-ink-muted); display: flex; justify-content: space-between;">
+        <span>All-Time Community Revenue:</span>
+        <strong style="color: #111;">Rs {{ '%.2f'|format(revenue) }}</strong>
+      </div>
+    </div>
+
+    <!-- Card 3: Average Customer Value (LTV) -->
+    <div class="crm-kpi-card">
+      <div>
+        <div class="crm-kpi-head">
+          <h4 class="crm-kpi-title">Average Customer Value (LTV)</h4>
+          <span class="crm-kpi-badge">All-Time</span>
+        </div>
+        <div class="crm-kpi-val">Rs {{ '%.2f'|format(analytics.kpi.average_customer_value) }}</div>
+        <div class="crm-kpi-sub">Lifetime spend across {{ analytics.kpi.total_customers }} customers</div>
+      </div>
+      <!-- Spend Brackets Breakdown -->
+      <div class="crm-bracket-strip">
+        {% for b in analytics.kpi.ltv_brackets %}
+        <div class="crm-bracket-row" data-bracket-key="{{ b.key }}" onclick="window.crmFilterBySpendBracket('{{ b.key }}')">
+          <span>{{ b.label }}</span>
+          <div class="crm-bracket-track">
+            <div class="crm-bracket-bar" style="width: {{ b.percent }}%;"></div>
+          </div>
+          <strong style="text-align: right;">{{ b.count }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       B. CROSS-FILTERING & INSIGHTS AREA (RETENTION TIMELINE & DONUT CHARTS)
+       ======================================================================== -->
+  <div class="crm-insights-grid">
+    <!-- Left: Customer Acquisition & Retention Timeline -->
+    <div class="crm-panel-card">
+      <div class="crm-panel-head">
+        <div>
+          <h3>Acquisition & Retention Progression</h3>
+          <small style="color: #777; font-size: 10px;">New sign-ups vs Repeat purchases over time</small>
+        </div>
+        <div class="crm-retention-badge" title="Repeat buyers as a percentage of customers who have made orders">
+          ● Retention Rate: <strong>{{ retention_rate }}%</strong>
+        </div>
+      </div>
+
+      <div class="crm-timeline-container">
+        <!-- SVG Timeline Chart -->
+        <svg viewBox="0 0 460 140" class="crm-timeline-svg" preserveAspectRatio="none">
+          <line x1="0" y1="125" x2="460" y2="125" stroke="#dedbd0" stroke-width="1"></line>
+          {% set max_count = 1 %}
+          {% for p in analytics.timeline %}
+            {% if p.new_signups + p.repeat_purchases > max_count %}
+              {% set max_count = p.new_signups + p.repeat_purchases %}
+            {% endif %}
+          {% endfor %}
+          {% set n_points = analytics.timeline|length %}
+          {% set col_w = (420 / n_points) if n_points > 0 else 40 %}
+
+          {% for p in analytics.timeline %}
+            {% set x = 20 + loop.index0 * col_w %}
+            {% set h_signups = (p.new_signups / (max_count or 1)) * 90 %}
+            {% set h_repeat = (p.repeat_purchases / (max_count or 1)) * 90 %}
+            
+            <!-- Repeat Purchases Bar -->
+            <rect x="{{ x }}" y="{{ 125 - h_repeat }}" width="{{ (col_w * 0.4)|round }}" height="{{ h_repeat }}" fill="#7c3aed" rx="2">
+              <title>{{ p.label }}: {{ p.repeat_purchases }} repeat purchases</title>
+            </rect>
+            <!-- New Sign-ups Bar -->
+            <rect x="{{ x + (col_w * 0.45)|round }}" y="{{ 125 - h_signups }}" width="{{ (col_w * 0.4)|round }}" height="{{ h_signups }}" fill="#111111" rx="2">
+              <title>{{ p.label }}: {{ p.new_signups }} new sign-ups</title>
+            </rect>
+
+            <text x="{{ x + (col_w * 0.4)|round }}" y="137" font-size="7.5" fill="#888" text-anchor="middle">{{ p.label }}</text>
+          {% endfor %}
+        </svg>
+
+        <div class="crm-timeline-legend">
+          <span><i class="crm-legend-dot" style="background: #111;"></i> New sign-ups</span>
+          <span><i class="crm-legend-dot" style="background: #7c3aed;"></i> Repeat purchases</span>
+          <span style="margin-left: auto; font-size: 9px; color: #888;">Hover bars for exact metrics</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Interactive Donut Charts -->
+    <div class="crm-panel-card">
+      <div class="crm-panel-head">
+        <div>
+          <h3>Channel & Acquisition Segmentation</h3>
+          <small style="color: #777; font-size: 10px;">Click any slice or legend item to cross-filter the ledger</small>
+        </div>
+      </div>
+
+      <div class="crm-donuts-wrap">
+        <!-- Donut 1: Acquisition Type -->
+        <div class="crm-donut-box">
+          <span class="crm-donut-title">Acquisition Type</span>
+          <div class="crm-donut-svg-wrap">
+            <svg viewBox="0 0 100 100" class="crm-donut-svg">
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="14"></circle>
+              {% set cumulative_pct = 0.0 %}
+              {% for d in analytics.donuts.acquisition_types %}
+                {% set dash_array = (d.percent * 2.387)|round(1) %}
+                {% set dash_offset = (238.7 - (cumulative_pct * 2.387))|round(1) %}
+                <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="14"
+                        stroke-dasharray="{{ dash_array }} 238.7" stroke-dashoffset="{{ dash_offset }}"
+                        class="crm-donut-slice" data-atype="{{ d.key }}"
+                        onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
+                  <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
+                </circle>
+              {% endfor %}
+            </svg>
+            <div class="crm-donut-center">
+              <strong>{{ analytics.kpi.total_customers }}</strong>
+              <small>Customers</small>
+            </div>
+          </div>
+          <!-- Legend -->
+          <div class="crm-donut-legend">
+            {% for d in analytics.donuts.acquisition_types %}
+            <div class="crm-donut-legend-item" data-atype="{{ d.key }}" onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
+              <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
+              <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <!-- Donut 2: Acquisition Channels -->
+        <div class="crm-donut-box">
+          <span class="crm-donut-title">Client Channels</span>
+          <div class="crm-donut-svg-wrap">
+            <svg viewBox="0 0 100 100" class="crm-donut-svg">
+              <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="14"></circle>
+              {% for d in analytics.donuts.acquisition_channels %}
+                {% set dash_array = (d.percent * 2.387)|round(1) %}
+                {% set dash_offset = (238.7 - (loop.index0 * 75))|round(1) %}
+                <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="14"
+                        stroke-dasharray="{{ dash_array }} 238.7" stroke-dashoffset="{{ dash_offset }}"
+                        class="crm-donut-slice" data-channel="{{ d.key }}"
+                        onclick="window.crmFilterByChannel('{{ d.key }}')">
+                  <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
+                </circle>
+              {% endfor %}
+            </svg>
+            <div class="crm-donut-center">
+              <strong>{{ analytics.kpi.total_customers }}</strong>
+              <small>Mix</small>
+            </div>
+          </div>
+          <!-- Legend -->
+          <div class="crm-donut-legend">
+            {% for d in analytics.donuts.acquisition_channels %}
+            <div class="crm-donut-legend-item" data-channel="{{ d.key }}" onclick="window.crmFilterByChannel('{{ d.key }}')">
+              <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
+              <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       C. SMART SEGMENT NAVIGATION TABS STRIP
+       ======================================================================== -->
+  <div class="crm-tabs-strip">
+    <div class="crm-tab-item active" data-segment-id="all" onclick="window.crmSelectSegment('all')">
+      All Customers <span class="crm-tab-badge">{{ analytics.kpi.total_customers }}</span>
+    </div>
+
+    <!-- Built-in preset segments -->
+    <div class="crm-tab-item" data-segment-id="high_value" data-segment-name="High Value (LTV Rs 200+)" onclick="window.crmSelectSegment('high_value')">
+      <i class="crm-tab-dot" style="background: #8b5cf6;"></i> High Value (LTV Rs 200+)
+    </div>
+    <div class="crm-tab-item" data-segment-id="recent" data-segment-name="Recent Sign-ups (30D)" onclick="window.crmSelectSegment('recent')">
+      <i class="crm-tab-dot" style="background: #0891b2;"></i> Recent Sign-ups
+    </div>
+    <div class="crm-tab-item" data-segment-id="agent_sales" data-segment-name="Agent Sales" onclick="window.crmSelectSegment('agent_sales')">
+      <i class="crm-tab-dot" style="background: #059669;"></i> Agent Sales
+    </div>
+    <div class="crm-tab-item" data-segment-id="opted_in" data-segment-name="Marketing Consented" onclick="window.crmSelectSegment('opted_in')">
+      <i class="crm-tab-dot" style="background: #2563eb;"></i> Marketing Consented
+    </div>
+
+    <!-- Custom User-Created Smart Segments -->
+    {% for seg in smart_segments %}
+    <div class="crm-tab-item" data-segment-id="{{ seg.id }}" data-segment-name="{{ seg.name }}" onclick="window.crmSelectSegment({{ seg.id }})">
+      <i class="crm-tab-dot" style="background: {{ seg.color }};"></i>
+      {{ seg.name }}
+      {% if seg.daily_digest %}
+      <span class="crm-tab-digest-icon" title="Included in daily digest at {{ seg.digest_time }}">✉</span>
+      {% endif %}
+      <span class="crm-tab-edit-icon" onclick="event.stopPropagation(); window.crmOpenSegmentModal({{ seg.id }})" title="Edit segment">✎</span>
+    </div>
+    {% endfor %}
+
+    <button type="button" class="crm-btn-secondary" style="padding: 4px 10px; margin-left: 8px; font-size: 10.5px;" onclick="window.crmOpenSegmentModal()">
+      + Smart segment
+    </button>
+  </div>
+
+  <!-- Active Filter Chips Bar (populated dynamically) -->
+  <div class="crm-active-chips-bar" id="crm-active-chips-bar"></div>
+
+  <!-- ========================================================================
+       D. HEAD-TO-HEAD SEGMENT COMPARISON MODULE (TOGGLEABLE)
+       ======================================================================== -->
+  <div class="crm-compare-module" id="crm-compare-module">
+    <div class="crm-compare-head">
+      <div>
+        <h3 style="margin: 0; font-size: 15px; font-weight: 600;">Head-to-Head Segment Comparison</h3>
+        <small style="color: #666; font-size: 10px;">Select two segments to visualize audience overlap, shared spend, and divergence</small>
+      </div>
+      <div class="crm-compare-selectors">
+        <select id="crm-compare-sel-a" class="crm-compare-select" onchange="window.crmSwapCompare()">
+          <option value="preset_high_value">High Value (Rs 200+)</option>
+          <option value="preset_agent">Store Agent Clients</option>
+          <option value="preset_subscribers">Marketing Consented</option>
+          <option value="preset_recent">Recent Sign-ups (30D)</option>
+          {% for seg in smart_segments %}
+          <option value="{{ seg.id }}">{{ seg.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="crm-swap-btn" onclick="window.crmSwapCompare()" title="Swap segments">⇄</button>
+        <select id="crm-compare-sel-b" class="crm-compare-select" onchange="window.crmSwapCompare()">
+          <option value="preset_agent">Store Agent Clients</option>
+          <option value="preset_high_value">High Value (Rs 200+)</option>
+          <option value="preset_subscribers">Marketing Consented</option>
+          <option value="preset_recent">Recent Sign-ups (30D)</option>
+          {% for seg in smart_segments %}
+          <option value="{{ seg.id }}">{{ seg.name }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="crm-btn-secondary" onclick="window.crmToggleCompare()">Close ✕</button>
+      </div>
+    </div>
+
+    <!-- Overlap Insight & High-Risk Alert Banner -->
+    <div id="crm-overlap-banner-wrap"></div>
+
+    <div class="crm-compare-body" style="margin-top: 14px;">
+      <!-- Left: Interactive Venn Diagram -->
+      <div class="crm-venn-container">
+        <div id="crm-venn-svg-wrap"></div>
+        <div class="crm-venn-overlap-hint">
+          Click circle or intersection to filter the table below to that exact group
+        </div>
+      </div>
+
+      <!-- Right: Comparative Metrics Matrix Bars -->
+      <div id="crm-compare-metrics-wrap"></div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       E. CUSTOMER LEDGER TABLE CONTROLS & SEARCH
+       ======================================================================== -->
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+    <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 450px;">
+      <input type="text" id="crm-search-input" placeholder="Search customers by name, email, phone..." style="width: 100%; padding: 7px 10px; border: 1px solid var(--crm-line); border-radius: 3px; font-size: 11px;">
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; font-size: 11px;">
+      <!-- Agent Filter Dropdown -->
+      <select onchange="window.location.search = 'agent_id=' + this.value" style="padding: 6px 8px; border: 1px solid var(--crm-line); font-size: 11px; border-radius: 3px;">
+        <option value="">All Agents & Direct</option>
+        <option value="direct" {% if filters.get('agent_id') == 'direct' %}selected{% endif %}>Direct Sales Only</option>
+        {% for ag in agents %}
+        <option value="{{ ag.id }}" {% if filters.get('agent_id')|string == ag.id|string %}selected{% endif %}>{{ ag.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <!-- Customer Ledger Table -->
+  <div class="crm-ledger-wrap">
+    <table class="crm-table">
+      <thead>
+        <tr>
+          <th style="width: 32px; text-align: center;">
+            <input type="checkbox" id="crm-master-cb" title="Select all visible">
+          </th>
+          <th>Customer</th>
+          <th>Contact Details</th>
+          <th>Channel & Acquisition</th>
+          <th>Joined</th>
+          <th>Orders</th>
+          <th>Total Spend</th>
+          <th>Marketing Consent</th>
+        </tr>
+      </thead>
+      <tbody id="crm-table-body">
+        {% for row in customer_rows %}
+        <tr id="crm-row-{{ row.customer.id }}">
+          <td style="text-align: center;" onclick="event.stopPropagation()">
+            <input type="checkbox" class="crm-row-cb" data-customer-id="{{ row.customer.id }}">
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})">
+            <div class="crm-cust-cell">
+              <div class="crm-avatar">{{ row.customer.first_name[0] }}{{ row.customer.last_name[0] }}</div>
+              <div class="crm-cust-meta">
+                <strong>{{ row.customer.first_name }} {{ row.customer.last_name }} <span class="crm-badge crm-badge-rank">{{ row.rank }}</span></strong>
+                <small>Agent: {{ row.agent_names or 'Direct sales' }}</small>
+              </div>
+            </div>
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})">
+            <div style="font-weight: 500;">{{ row.customer.email }}</div>
+            <small style="color: #777;">{{ row.customer.phone or 'No phone' }}</small>
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})">
+            <span class="crm-badge crm-badge-channel" style="margin-right: 4px;">{{ row.channel }}</span>
+            <span class="crm-badge crm-badge-type">{{ row.acquisition_type }}</span>
+            {% if row.tags %}
+            <div style="margin-top: 4px;">
+              {% for tag in row.tags %}
+              <span class="crm-tag-chip" onclick="window.crmFilterByTag('{{ tag }}', event)">{{ tag }}</span>
+              {% endfor %}
+            </div>
+            {% endif %}
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})">
+            {{ row.customer.created_at.strftime('%b %d, %Y') if row.customer.created_at else '' }}
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})" style="font-weight: 600;">
+            {{ row.order_count }}
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})" style="font-weight: 700; color: #111;">
+            Rs {{ '%.2f'|format(row.spend) }}
+          </td>
+          <td onclick="window.crmOpenCustomerDetail({{ row.customer.id }})">
+            <span class="crm-status-pill {{ row.marketing_status }}">
+              <span style="font-size: 8px;">●</span> {{ 'Subscribed' if row.marketing_status == 'subscribed' else ('Unsubscribed' if row.marketing_status == 'unsubscribed' else 'Not opted-in') }}
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="table-empty" style="text-align: center; padding: 36px 14px; color: #888;">
+            No customers match these filters.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Pagination Footer Strip -->
+    <div class="crm-pagination-wrap">
+      <div id="crm-pagination-counter">
+        Showing {{ customer_rows|length }} of {{ customer_count }} customers
+      </div>
+      <div>
+        <button type="button" class="crm-btn-secondary" id="crm-show-more-btn" style="padding: 5px 14px;">
+          Show more (12)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       E. STICKY BULK ACTIONS BAR (TRIGGERS ON CHECKBOX SELECTION)
+       ======================================================================== -->
+  <div class="crm-sticky-bulk-bar" id="crm-sticky-bulk-bar">
+    <div class="crm-bulk-count" id="crm-bulk-count-el">1 customer selected</div>
+    
+    <!-- Scope Toggle: Selected vs Filtered -->
+    <div class="crm-scope-toggle">
+      <button type="button" class="crm-scope-btn active" id="crm-scope-selected-btn">Selected (1)</button>
+      <button type="button" class="crm-scope-btn" id="crm-scope-filtered-btn">All Matching</button>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="crm-bulk-actions-group">
+      <button type="button" class="crm-bulk-btn" onclick="window.crmOpenBulkTagPrompt()" title="Add or remove customer tag">
+        🏷 Tag
+      </button>
+      <button type="button" class="crm-bulk-btn" onclick="window.crmOpenBulkConsentPrompt()" title="Update marketing consent">
+        ✓ Consent
+      </button>
+      <button type="button" class="crm-bulk-btn" onclick="window.crmOpenEmailModal()" title="Compose bulk email message">
+        ✉ Dispatch Email
+      </button>
+      <button type="button" class="crm-bulk-btn" onclick="window.crmExportSelectedCsv()" title="Export selected to CSV">
+        ↓ Export CSV
+      </button>
+    </div>
+
+    <button type="button" class="crm-bulk-close" id="crm-bulk-close-btn" title="Deselect all">✕</button>
+  </div>
+
+  <!-- ========================================================================
+       F. CUSTOMER PROFILE DETAIL SLIDE-OVER PANEL
+       ======================================================================== -->
+  <div class="crm-slide-backdrop" id="crm-slide-backdrop" onclick="window.crmCloseCustomerDetail()"></div>
+  <aside class="crm-slide-panel" id="crm-slide-panel" aria-label="Customer Profile Panel">
+    <div id="crm-slide-panel-body">
+      <!-- Populated dynamically via crmOpenCustomerDetail -->
+    </div>
+  </aside>
+
+  <!-- ========================================================================
+       C. SMART SEGMENT BUILDER MODAL
+       ======================================================================== -->
+  <div class="crm-modal-backdrop" id="crm-segment-modal">
+    <div class="crm-modal">
+      <div class="crm-modal-head">
+        <h2>Smart Segment Builder</h2>
+        <button type="button" class="crm-panel-close" onclick="window.crmCloseSegmentModal()">✕</button>
+      </div>
+
+      <form id="crm-segment-form" onsubmit="window.crmSaveSegmentSubmit(event)">
+        <input type="hidden" id="crm-seg-id">
+        <input type="hidden" id="crm-seg-color" value="#111111">
+
+        <div class="crm-modal-body">
+          <!-- Left Column: Filter Criteria & Setup -->
+          <div style="display: flex; flex-direction: column; gap: 14px;">
+            <div>
+              <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;">Segment Name</label>
+              <input type="text" id="crm-seg-name" placeholder="e.g. Kathmandu High-Spenders, Winter VIPs" style="width: 100%; padding: 6px 8px; border: 1px solid var(--crm-line); font-size: 11px; border-radius: 3px;" required>
+            </div>
+
+            <!-- Tab Color Palette Swatches -->
+            <div>
+              <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 2px;">Tab Badge Color</label>
+              <div class="crm-palette">
+                <span class="crm-color-swatch active" data-color="#111111" style="background: #111111;"></span>
+                <span class="crm-color-swatch" data-color="#2563eb" style="background: #2563eb;"></span>
+                <span class="crm-color-swatch" data-color="#059669" style="background: #059669;"></span>
+                <span class="crm-color-swatch" data-color="#d97706" style="background: #d97706;"></span>
+                <span class="crm-color-swatch" data-color="#7c3aed" style="background: #7c3aed;"></span>
+                <span class="crm-color-swatch" data-color="#dc2626" style="background: #dc2626;"></span>
+                <span class="crm-color-swatch" data-color="#0891b2" style="background: #0891b2;"></span>
+                <span class="crm-color-swatch" data-color="#475569" style="background: #475569;"></span>
+              </div>
+            </div>
+
+            <!-- Match Condition: ALL vs ANY -->
+            <div style="display: flex; justify-content: space-between; align-items: center; background: #faf9f5; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 3px;">
+              <span style="font-size: 11px; font-weight: 600;">Condition Logic</span>
+              <select id="crm-seg-match" style="padding: 3px 8px; font-size: 11px; border: 1px solid var(--crm-line);">
+                <option value="all">Match ALL criteria (AND)</option>
+                <option value="any">Match ANY criterion (OR)</option>
+              </select>
+            </div>
+
+            <!-- Filter Criteria Sections -->
+            <div style="border: 1px solid var(--crm-line); border-radius: 4px; padding: 12px; display: flex; flex-direction: column; gap: 10px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #555;">Targeting Rules</span>
+                <button type="button" class="crm-btn-secondary" style="font-size: 9.5px; padding: 2px 6px;" onclick="window.crmSeedSegmentFromActiveFilters()">
+                  ⚡ Seed from active filters
+                </button>
+              </div>
+
+              <!-- Channel Pills -->
+              <div>
+                <small style="display: block; font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 3px;">Acquisition Channel</small>
+                <div style="display: flex; gap: 8px; font-size: 10px;">
+                  <label><input type="checkbox" name="seg_channel" value="Direct Web"> Direct Web</label>
+                  <label><input type="checkbox" name="seg_channel" value="Guest Checkout"> Guest Checkout</label>
+                  <label><input type="checkbox" name="seg_channel" value="Store Agent Portal"> Store Agent Portal</label>
+                </div>
+              </div>
+
+              <!-- Acquisition Type Pills -->
+              <div>
+                <small style="display: block; font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 3px;">Acquisition Type</small>
+                <div style="display: flex; gap: 8px; font-size: 10px;">
+                  <label><input type="checkbox" name="seg_atype" value="New sign-up"> New sign-up</label>
+                  <label><input type="checkbox" name="seg_atype" value="Repeat buyer"> Repeat buyer</label>
+                  <label><input type="checkbox" name="seg_atype" value="Reactivated"> Reactivated</label>
+                </div>
+              </div>
+
+              <!-- Marketing Consent Radios -->
+              <div>
+                <small style="display: block; font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 3px;">Marketing Consent</small>
+                <div style="display: flex; gap: 8px; font-size: 10px;">
+                  <label><input type="radio" name="seg_consent" value="any" checked> Any</label>
+                  <label><input type="radio" name="seg_consent" value="subscribed"> Subscribed</label>
+                  <label><input type="radio" name="seg_consent" value="not_opted_in"> Not opted-in</label>
+                  <label><input type="radio" name="seg_consent" value="unsubscribed"> Unsubscribed</label>
+                </div>
+              </div>
+
+              <!-- Assigned Agent -->
+              <div>
+                <small style="display: block; font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 3px;">Assigned Agent</small>
+                <select id="crm-seg-agent" style="width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid var(--crm-line);">
+                  <option value="any">Any Agent or Direct</option>
+                  <option value="direct">Direct sales only (No Agent)</option>
+                  {% for ag in agents %}
+                  <option value="{{ ag.id }}">{{ ag.name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <!-- Spend Range -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <label style="font-size: 10px;">
+                  Min Spend (Rs)
+                  <input type="number" id="crm-seg-min-spend" placeholder="0" min="0" style="width: 100%; padding: 4px; border: 1px solid var(--crm-line); font-size: 11px;">
+                </label>
+                <label style="font-size: 10px;">
+                  Max Spend (Rs)
+                  <input type="number" id="crm-seg-max-spend" placeholder="No max" min="0" style="width: 100%; padding: 4px; border: 1px solid var(--crm-line); font-size: 11px;">
+                </label>
+              </div>
+
+              <!-- Orders Range -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <label style="font-size: 10px;">
+                  Min Orders
+                  <input type="number" id="crm-seg-min-orders" placeholder="0" min="0" style="width: 100%; padding: 4px; border: 1px solid var(--crm-line); font-size: 11px;">
+                </label>
+                <label style="font-size: 10px;">
+                  Max Days Joined
+                  <input type="number" id="crm-seg-max-days" placeholder="e.g. 30" min="0" style="width: 100%; padding: 4px; border: 1px solid var(--crm-line); font-size: 11px;">
+                </label>
+              </div>
+            </div>
+
+            <!-- Toggles: Pin to Tabs & Daily Digest -->
+            <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px; padding: 4px 0;">
+              <label><input type="checkbox" id="crm-seg-pinned" checked> Pin as navigation tab</label>
+              <label><input type="checkbox" id="crm-seg-digest"> Include segment summary in scheduled daily email digest (09:00 NPT)</label>
+            </div>
+          </div>
+
+          <!-- Right Column: Live Segment Preview Panel -->
+          <div style="background: #faf9f5; border: 1px solid var(--crm-line); border-radius: 4px; padding: 16px; display: flex; flex-direction: column; gap: 14px;">
+            <span style="font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #555;">Live Segment Preview</span>
+            
+            <div style="background: #fff; padding: 12px; border: 1px solid var(--crm-line); border-radius: 3px; text-align: center;">
+              <div style="font: 500 28px var(--serif); color: #111;" id="crm-seg-prev-count">12</div>
+              <small style="color: #666; font-size: 10px;" id="crm-seg-prev-share">100% of customer base</small>
+            </div>
+
+            <div style="background: #fff; padding: 10px; border: 1px solid var(--crm-line); border-radius: 3px;">
+              <small style="display: block; font-size: 8.5px; text-transform: uppercase; color: #777;">Total Segment Revenue</small>
+              <strong style="font-size: 13px; color: #111;" id="crm-seg-prev-rev">Rs 0.00</strong>
+            </div>
+
+            <div style="background: #fff; padding: 10px; border: 1px solid var(--crm-line); border-radius: 3px;">
+              <small style="display: block; font-size: 8.5px; text-transform: uppercase; color: #777; margin-bottom: 4px;">Channel Mix</small>
+              <div id="crm-seg-prev-mix"></div>
+            </div>
+
+            <div style="background: #fff; padding: 10px; border: 1px solid var(--crm-line); border-radius: 3px; flex: 1;">
+              <small style="display: block; font-size: 8.5px; text-transform: uppercase; color: #777; margin-bottom: 4px;">Sample Customer Rows</small>
+              <div id="crm-seg-prev-samples"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="crm-modal-footer">
+          <button type="button" class="crm-btn-secondary" onclick="window.crmCloseSegmentModal()">Cancel</button>
+          <button type="submit" class="crm-btn-primary">Save Smart Segment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========================================================================
+       E. BULK EMAIL DISPATCHER MODAL
+       ======================================================================== -->
+  <div class="crm-modal-backdrop" id="crm-email-modal">
+    <div class="crm-modal" style="width: min(640px, 94vw);">
+      <div class="crm-modal-head">
+        <h2>Dispatch Bulk Email</h2>
+        <button type="button" class="crm-panel-close" onclick="window.crmCloseEmailModal()">✕</button>
+      </div>
+
+      <div style="padding: 20px; display: flex; flex-direction: column; gap: 14px;">
+        <!-- Template Selection -->
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <label style="font-size: 11px; font-weight: 700; width: 110px;">Dispatch Type:</label>
+          <select id="crm-email-template-type" style="flex: 1; padding: 6px; border: 1px solid var(--crm-line); font-size: 11px; border-radius: 3px;">
+            <option value="marketing">Marketing Campaign (Requires Opt-in Consent)</option>
+            <option value="service">Service Announcement / Order Update (Operational)</option>
+          </select>
+        </div>
+
+        <!-- Privacy Non-Opted-In Warning Banner -->
+        <div id="crm-email-warning-box"></div>
+
+        <!-- Subject Line -->
+        <div>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;">Subject</label>
+          <input type="text" id="crm-email-subject-input" placeholder="e.g. Exclusive Studio Drop · Thank you from All of Us" style="width: 100%; padding: 7px 10px; border: 1px solid var(--crm-line); font-size: 11px; border-radius: 3px;">
+        </div>
+
+        <!-- Variable Insert Tag Pills -->
+        <div>
+          <small style="font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 4px; display: block;">Insert Variable Tags:</small>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+            <button type="button" class="crm-btn-secondary" style="padding: 2px 6px; font-size: 9.5px;" onclick="window.crmInsertVariableTag('{{first_name}}')">{{first_name}}</button>
+            <button type="button" class="crm-btn-secondary" style="padding: 2px 6px; font-size: 9.5px;" onclick="window.crmInsertVariableTag('{{last_name}}')">{{last_name}}</button>
+            <button type="button" class="crm-btn-secondary" style="padding: 2px 6px; font-size: 9.5px;" onclick="window.crmInsertVariableTag('{{email}}')">{{email}}</button>
+            <button type="button" class="crm-btn-secondary" style="padding: 2px 6px; font-size: 9.5px;" onclick="window.crmInsertVariableTag('{{total_spend}}')">{{total_spend}}</button>
+            <button type="button" class="crm-btn-secondary" style="padding: 2px 6px; font-size: 9.5px;" onclick="window.crmInsertVariableTag('{{store_name}}')">{{store_name}}</button>
+          </div>
+        </div>
+
+        <!-- Message Body -->
+        <div>
+          <label style="font-size: 11px; font-weight: 700; display: block; margin-bottom: 4px;">Message Body</label>
+          <textarea id="crm-email-body-input" rows="6" style="width: 100%; border: 1px solid var(--crm-line); padding: 8px; font-size: 11px; border-radius: 3px;" placeholder="Hello {{first_name}},&#10;&#10;We wanted to reach out regarding our latest studio drop..."></textarea>
+        </div>
+
+        <!-- Scheduling -->
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <label style="font-size: 11px; font-weight: 700; width: 110px;">Dispatch Schedule:</label>
+          <select id="crm-email-schedule-select" style="flex: 1; padding: 6px; border: 1px solid var(--crm-line); font-size: 11px; border-radius: 3px;">
+            <option value="immediate">⚡ Immediate Dispatch</option>
+            <option value="morning">🕒 Scheduled for Morning (09:00 NPT)</option>
+          </select>
+        </div>
+
+        <!-- Recipient List Avatar Preview -->
+        <div>
+          <small style="font-size: 9px; text-transform: uppercase; color: #777; margin-bottom: 3px; display: block;">Recipients Overview:</small>
+          <div id="crm-email-recipient-avatars" style="display: flex; flex-wrap: wrap; gap: 4px;"></div>
+        </div>
+      </div>
+
+      <div class="crm-modal-footer">
+        <button type="button" class="crm-btn-secondary" onclick="window.crmCloseEmailModal()">Cancel</button>
+        <button type="button" class="crm-btn-primary" onclick="window.crmDispatchEmailSubmit()">Confirm &amp; Dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification with Undo -->
+  <div class="crm-toast" id="crm-toast"></div>
+
+</div>
+
+<script src="{{ url_for('static', filename='crm.js') }}"></script>
 {% endblock %}

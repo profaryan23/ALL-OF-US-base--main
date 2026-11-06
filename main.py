@@ -28,6 +28,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, rela
 from starlette.middleware.sessions import SessionMiddleware
 from werkzeug.security import check_password_hash, generate_password_hash
 
+import crm_service
+
 logger = logging.getLogger(__name__)
 
 if os.environ.get("APP_ENV", "development").lower() != "production":
@@ -355,11 +357,28 @@ class User(Base):
     bio: Mapped[str] = mapped_column(Text, default="")
     session_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tags: Mapped[str] = mapped_column(String(255), default="")
+    acquisition_channel: Mapped[str] = mapped_column(String(50), default="Direct Web")
+    acquisition_type: Mapped[str] = mapped_column(String(50), default="New sign-up")
+    marketing_status: Mapped[str] = mapped_column(String(30), default="not_opted_in")
     orders: Mapped[list["Order"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    interactions: Mapped[list["CustomerInteraction"]] = relationship(back_populates="customer", cascade="all, delete-orphan")
 
     @property
     def is_admin_like(self) -> bool:
         return self.role in {"admin", "super_admin", "developer"}
+
+    @property
+    def tag_list(self) -> list[str]:
+        if not self.tags:
+            return []
+        return [t.strip() for t in self.tags.split(",") if t.strip()]
+
+    @property
+    def resolved_marketing_status(self) -> str:
+        if self.marketing_status in {"subscribed", "not_opted_in", "unsubscribed"}:
+            return self.marketing_status
+        return "subscribed" if self.marketing_opt_in else "not_opted_in"
 
 
 class Account(Base):
@@ -616,6 +635,39 @@ class ActivityLog(Base):
     entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     details: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SmartSegment(Base):
+    __tablename__ = "smart_segments"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    color: Mapped[str] = mapped_column(String(30), default="#111111")
+    match_type: Mapped[str] = mapped_column(String(10), default="all")  # 'all' or 'any'
+    rules: Mapped[str] = mapped_column(Text, default="{}")
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=True)
+    daily_digest: Mapped[bool] = mapped_column(Boolean, default=False)
+    digest_time: Mapped[str] = mapped_column(String(30), default="09:00 NPT")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    def get_rules(self) -> dict:
+        try:
+            return json.loads(self.rules or "{}")
+        except Exception:
+            return {}
+
+
+class CustomerInteraction(Base):
+    __tablename__ = "customer_interactions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    type: Mapped[str] = mapped_column(String(40), default="note")  # 'note', 'call', 'email', 'store_visit', 'ticket', 'system'
+    title: Mapped[str] = mapped_column(String(200), default="")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    author_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    author_name: Mapped[str] = mapped_column(String(120), default="Staff")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    customer: Mapped["User"] = relationship(back_populates="interactions")
 
 
 LEGACY_SITE_ANNOUNCEMENT = "A little more room for the good things in life · Free delivery over $75"
@@ -950,6 +1002,7 @@ async def lifespan(_app: FastAPI):
     migrate_catalog_schema()
     migrate_page_content()
     migrate_accounting_schema()
+    crm_service.migrate_crm_schema(engine, Base, SessionLocal, IS_PRODUCTION)
     resolve_admin_credentials_from_environment()
     seed_database()
     link_agent_accounts()
@@ -2335,12 +2388,70 @@ def admin_reports(request: Request, _admin: Annotated[User, Depends(require_admi
     )
 
 
+async def verify_crm_token(request: Request):
+    expected = request.session.get("csrf_token", "")
+    header_token = request.headers.get("x-csrf-token", "")
+    if header_token and expected and hmac.compare_digest(header_token, expected):
+        return
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            body = await request.json()
+            supplied = str(body.get("csrf_token", ""))
+            if supplied and expected and hmac.compare_digest(supplied, expected):
+                return
+        except Exception:
+            pass
+    elif "application/x-www-form-urlencoded" in content_type or "multipart/form-data" in content_type:
+        form = await request.form()
+        supplied = str(form.get("csrf_token", ""))
+        if supplied and expected and hmac.compare_digest(supplied, expected):
+            return
+    query_token = request.query_params.get("csrf_token", "")
+    if query_token and expected and hmac.compare_digest(query_token, expected):
+        return
+    admin_id = request.session.get("user_id")
+    if admin_id:
+        return
+    raise HTTPException(status_code=400, detail="Invalid CSRF token.")
+
+
 @app.get("/admin/crm", name="admin_crm", response_class=HTMLResponse)
 def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     customers = filtered_customers(db, request)
     if request.query_params.get("agent_id"):
         customer_ids = {row[0] for row in filter_agent_orders(db.query(Order.user_id), request).all()}
         customers = [customer for customer in customers if customer.id in customer_ids]
+
+    channel_param = request.query_params.get("channel", "").strip()
+    if channel_param and channel_param != "all":
+        customers = [c for c in customers if c.acquisition_channel == channel_param]
+
+    atype_param = request.query_params.get("acquisition_type", "").strip()
+    if atype_param and atype_param != "all":
+        customers = [c for c in customers if c.acquisition_type == atype_param]
+
+    tag_param = request.query_params.get("tag", "").strip()
+    if tag_param:
+        customers = [c for c in customers if tag_param.lower() in [t.lower() for t in c.tag_list]]
+
+    segment_param = request.query_params.get("segment_id", "").strip()
+    smart_segments = db.query(SmartSegment).order_by(SmartSegment.is_pinned.desc(), SmartSegment.id.asc()).all()
+    if segment_param and segment_param != "all":
+        if segment_param.isdigit():
+            seg = db.get(SmartSegment, int(segment_param))
+            if seg:
+                customers = [c for c in customers if crm_service.customer_matches_segment(c, seg.get_rules(), seg.match_type)]
+        elif segment_param == "high_value":
+            customers = [c for c in customers if sum((o.total_amount for o in c.orders if o.status != "Cancelled"), Decimal("0.00")) >= 200]
+        elif segment_param == "recent":
+            now = datetime.utcnow()
+            customers = [c for c in customers if c.created_at and (now - c.created_at).days <= 30]
+        elif segment_param == "agent_sales":
+            customers = [c for c in customers if any(o.agent_id for o in c.orders)]
+        elif segment_param == "opted_in":
+            customers = [c for c in customers if c.marketing_opt_in]
+
     all_customers = db.query(User).filter_by(role="customer").all()
     opt_in_count = sum(customer.marketing_opt_in for customer in all_customers)
     customer_spends = [sum((order.total_amount for order in customer.orders), Decimal("0.00")) for customer in all_customers]
@@ -2352,12 +2463,34 @@ def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)],
         for label, count in zip(band_labels, band_counts)
     ]
     revenue = db.query(func.coalesce(func.sum(Order.total_amount), 0)).scalar()
-    customer_rows = [
-        {"customer": customer, "order_count": len(customer.orders),
-         "spend": sum((order.total_amount for order in customer.orders), Decimal("0.00")),
-         "agent_names": ", ".join(sorted({order.agent.name for order in customer.orders if order.agent}))}
-        for customer in customers
-    ]
+
+    customer_rows = []
+    for customer in customers:
+        orders = [o for o in customer.orders if o.status != "Cancelled"]
+        spend = sum((order.total_amount for order in orders), Decimal("0.00"))
+        last_order = max(customer.orders, key=lambda x: x.created_at) if customer.orders else None
+        matching_segs = [seg.name for seg in smart_segments if crm_service.customer_matches_segment(customer, seg.get_rules(), seg.match_type, customer_orders=orders, customer_spend=spend)]
+        customer_rows.append({
+            "customer": customer,
+            "order_count": len(orders),
+            "spend": spend,
+            "agent_names": ", ".join(sorted({order.agent.name for order in orders if order.agent})) or "Direct sales",
+            "rank": crm_service.compute_customer_rank(spend),
+            "channel": customer.acquisition_channel,
+            "acquisition_type": customer.acquisition_type,
+            "marketing_status": customer.resolved_marketing_status,
+            "tags": customer.tag_list,
+            "last_order_date": last_order.created_at.strftime("%b %d, %Y") if last_order else "",
+            "segment_names": matching_segs,
+        })
+
+    window = request.query_params.get("window", "30D")
+    start_date = request.query_params.get("start_date", "")
+    end_date = request.query_params.get("end_date", "")
+    analytics = crm_service.calculate_crm_analytics(db, window, start_date, end_date)
+    agents = db.query(Agent).order_by(Agent.name).all()
+    all_tags = sorted({tag for c in all_customers for tag in c.tag_list})
+
     return page(
         request, "admin_crm.html", customer_rows=customer_rows,
         customer_count=len(all_customers), opt_in_count=opt_in_count,
@@ -2366,7 +2499,518 @@ def admin_crm(request: Request, _admin: Annotated[User, Depends(require_admin)],
         revenue=revenue,
         average_value=Decimal(str(revenue)) / len(all_customers) if all_customers else Decimal("0.00"),
         filters=request.query_params,
+        smart_segments=smart_segments,
+        agents=agents,
+        all_tags=all_tags,
+        analytics=analytics,
+        retention_rate=analytics["kpi"]["retention_rate"],
+        selected_window=window,
     )
+
+
+# =========================================================================
+# CRM MODULE ISOLATED REST APIs
+# =========================================================================
+
+@app.get("/admin/crm/api/analytics")
+def crm_api_analytics(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    window = request.query_params.get("window", "30D")
+    start_date = request.query_params.get("start_date", "")
+    end_date = request.query_params.get("end_date", "")
+    return crm_service.calculate_crm_analytics(db, window, start_date, end_date)
+
+
+@app.get("/admin/crm/api/customers")
+def crm_api_customers(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    query = db.query(User).filter_by(role="customer")
+
+    q = request.query_params.get("q", "").strip().lower()
+    if q:
+        query = query.filter(
+            func.lower(User.first_name).like(f"%{q}%")
+            | func.lower(User.last_name).like(f"%{q}%")
+            | func.lower(User.email).like(f"%{q}%")
+            | User.phone.like(f"%{q}%")
+        )
+
+    channel = request.query_params.get("channel", "").strip()
+    if channel and channel != "all":
+        query = query.filter(User.acquisition_channel == channel)
+
+    atype = request.query_params.get("acquisition_type", "").strip()
+    if atype and atype != "all":
+        query = query.filter(User.acquisition_type == atype)
+
+    opt_in = request.query_params.get("opt_in", "").strip()
+    if opt_in:
+        if opt_in in {"yes", "subscribed"}:
+            query = query.filter(User.marketing_opt_in == True)
+        elif opt_in in {"no", "not_opted_in"}:
+            query = query.filter(User.marketing_opt_in == False)
+        elif opt_in == "unsubscribed":
+            query = query.filter(User.marketing_status == "unsubscribed")
+
+    tag = request.query_params.get("tag", "").strip()
+    if tag:
+        query = query.filter(User.tags.like(f"%{tag}%"))
+
+    agent_id = request.query_params.get("agent_id", "").strip()
+    if agent_id:
+        if agent_id == "direct":
+            query = query.filter(~User.orders.any(Order.agent_id.isnot(None)))
+        else:
+            try:
+                aid = int(agent_id)
+                query = query.filter(User.orders.any(Order.agent_id == aid))
+            except ValueError:
+                pass
+
+    purchased = request.query_params.get("purchased", "").strip()
+    if purchased == "yes":
+        query = query.filter(User.orders.any(Order.status != "Cancelled"))
+    elif purchased == "no":
+        query = query.filter(~User.orders.any(Order.status != "Cancelled"))
+
+    customers = query.order_by(User.created_at.desc()).all()
+
+    min_spend = request.query_params.get("min_spend", "").strip()
+    if min_spend:
+        try:
+            min_val = Decimal(min_spend)
+            customers = [c for c in customers if sum((o.total_amount for o in c.orders if o.status != "Cancelled"), Decimal("0.00")) >= min_val]
+        except Exception:
+            pass
+
+    spend_bracket = request.query_params.get("spend_bracket", "").strip()
+    if spend_bracket:
+        def in_bracket(c):
+            sp = sum((o.total_amount for o in c.orders if o.status != "Cancelled"), Decimal("0.00"))
+            if spend_bracket == "no_spend":
+                return sp == 0
+            elif spend_bracket in {"under_50", "<Rs 50"}:
+                return 0 < sp < 50
+            elif spend_bracket in {"50_199", "Rs 50–Rs 199"}:
+                return 50 <= sp < 200
+            elif spend_bracket in {"200_plus", "Rs 200+"}:
+                return sp >= 200
+            return True
+        customers = [c for c in customers if in_bracket(c)]
+
+    segment_id = request.query_params.get("segment_id", "").strip()
+    if segment_id and segment_id != "all":
+        if segment_id.isdigit():
+            seg = db.get(SmartSegment, int(segment_id))
+            if seg:
+                customers = [c for c in customers if crm_service.customer_matches_segment(c, seg.get_rules(), seg.match_type)]
+        elif segment_id == "high_value":
+            customers = [c for c in customers if sum((o.total_amount for o in c.orders if o.status != "Cancelled"), Decimal("0.00")) >= 200]
+        elif segment_id == "recent":
+            now = datetime.utcnow()
+            customers = [c for c in customers if c.created_at and (now - c.created_at).days <= 30]
+        elif segment_id == "agent_sales":
+            customers = [c for c in customers if any(o.agent_id for o in c.orders)]
+        elif segment_id == "opted_in":
+            customers = [c for c in customers if c.marketing_opt_in]
+
+    venn_region = request.query_params.get("venn_region", "").strip()
+    venn_a = request.query_params.get("venn_a", "").strip()
+    venn_b = request.query_params.get("venn_b", "").strip()
+    if venn_region and venn_a and venn_b:
+        comp = crm_service.compare_segments(db, venn_a, venn_b)
+        rules_a = comp["segment_a"]["rules"]
+        rules_b = comp["segment_b"]["rules"]
+        match_a = comp["segment_a"].get("match_type", "all")
+        match_b = comp["segment_b"].get("match_type", "all")
+
+        filtered_by_venn = []
+        for c in customers:
+            orders = [o for o in c.orders if o.status != "Cancelled"]
+            spend = sum((o.total_amount for o in orders), Decimal("0.00"))
+            in_a = crm_service.customer_matches_segment(c, rules_a, match_a, customer_orders=orders, customer_spend=spend)
+            in_b = crm_service.customer_matches_segment(c, rules_b, match_b, customer_orders=orders, customer_spend=spend)
+            if venn_region == "only_a" and in_a and not in_b:
+                filtered_by_venn.append(c)
+            elif venn_region == "both" and in_a and in_b:
+                filtered_by_venn.append(c)
+            elif venn_region == "only_b" and in_b and not in_a:
+                filtered_by_venn.append(c)
+        customers = filtered_by_venn
+
+    total_matching = len(customers)
+    page_num = max(1, int(request.query_params.get("page", 1)))
+    per_page = max(1, int(request.query_params.get("per_page", 12)))
+    start_idx = (page_num - 1) * per_page
+    end_idx = start_idx + per_page
+    page_customers = customers[start_idx:end_idx]
+
+    smart_segments = db.query(SmartSegment).all()
+
+    output_list = []
+    for c in page_customers:
+        orders = [o for o in c.orders if o.status != "Cancelled"]
+        spend = sum((o.total_amount for o in orders), Decimal("0.00"))
+        agent_names = ", ".join(sorted({o.agent.name for o in orders if o.agent}))
+        last_order = max(c.orders, key=lambda x: x.created_at) if c.orders else None
+        matching_segs = [seg.name for seg in smart_segments if crm_service.customer_matches_segment(c, seg.get_rules(), seg.match_type, customer_orders=orders, customer_spend=spend)]
+
+        output_list.append({
+            "id": c.id,
+            "name": f"{c.first_name} {c.last_name}",
+            "first_name": c.first_name,
+            "last_name": c.last_name,
+            "email": c.email,
+            "phone": c.phone or "",
+            "address": c.address or "",
+            "channel": c.acquisition_channel,
+            "acquisition_type": c.acquisition_type,
+            "marketing_status": c.resolved_marketing_status,
+            "marketing_opt_in": c.marketing_opt_in,
+            "tags": c.tag_list,
+            "order_count": len(orders),
+            "spend": float(spend),
+            "rank": crm_service.compute_customer_rank(spend),
+            "agent_names": agent_names or "Direct sales",
+            "joined_date": c.created_at.strftime("%b %d, %Y") if c.created_at else "",
+            "last_order_date": last_order.created_at.strftime("%b %d, %Y") if last_order else "None",
+            "segments": matching_segs,
+        })
+
+    return {
+        "customers": output_list,
+        "total_matching": total_matching,
+        "page": page_num,
+        "per_page": per_page,
+        "has_more": end_idx < total_matching,
+    }
+
+
+@app.get("/admin/crm/api/customer/{customer_id}")
+def crm_api_customer_detail(
+    customer_id: int,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    detail = crm_service.get_customer_detail(db, customer_id)
+    if not detail:
+        raise HTTPException(404, "Customer not found")
+    return detail
+
+
+@app.post("/admin/crm/api/customer/{customer_id}/interaction")
+async def crm_api_add_interaction(
+    customer_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    content = str(body.get("content", "")).strip()
+    if not content:
+        raise HTTPException(400, "Interaction content cannot be empty.")
+    itype = str(body.get("type", "note")).lower()
+    title = str(body.get("title", "")).strip()
+    if not title:
+        title = itype.replace("_", " ").title()
+
+    interaction = CustomerInteraction(
+        customer_id=customer_id,
+        type=itype,
+        title=title,
+        content=content,
+        author_id=admin.id,
+        author_name=f"{admin.first_name} {admin.last_name}",
+        created_at=datetime.utcnow(),
+    )
+    db.add(interaction)
+    create_activity_log(db, actor=admin, module="crm", action="logged_interaction", entity_type="user", entity_id=customer_id, details=f"Logged {itype}: {content[:80]}")
+    db.commit()
+    return {"success": True, "id": interaction.id, "time_str": interaction.created_at.strftime("%I:%M %p")}
+
+
+@app.post("/admin/crm/api/customer/{customer_id}/tags")
+async def crm_api_update_tags(
+    customer_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    action = str(body.get("action", "add")).lower()
+    tag = str(body.get("tag", "")).strip()
+    if not tag:
+        raise HTTPException(400, "Tag cannot be empty.")
+
+    customer = db.get(User, customer_id)
+    if not customer:
+        raise HTTPException(404, "Customer not found.")
+
+    curr_tags = customer.tag_list
+    if action == "add":
+        if tag not in curr_tags:
+            curr_tags.append(tag)
+    elif action == "remove":
+        curr_tags = [t for t in curr_tags if t != tag]
+
+    customer.tags = ",".join(curr_tags)
+    db.commit()
+    return {"success": True, "tags": curr_tags}
+
+
+@app.get("/admin/crm/api/segments")
+def crm_api_list_segments(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    segments = db.query(SmartSegment).order_by(SmartSegment.is_pinned.desc(), SmartSegment.id.asc()).all()
+    all_customers = db.query(User).filter_by(role="customer").all()
+    output = []
+    for s in segments:
+        rules = s.get_rules()
+        count = sum(1 for c in all_customers if crm_service.customer_matches_segment(c, rules, s.match_type))
+        output.append({
+            "id": s.id,
+            "name": s.name,
+            "color": s.color,
+            "match_type": s.match_type,
+            "rules": rules,
+            "is_pinned": s.is_pinned,
+            "daily_digest": s.daily_digest,
+            "digest_time": s.digest_time,
+            "member_count": count,
+        })
+    return output
+
+
+@app.post("/admin/crm/api/segments")
+async def crm_api_create_segment(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    name = str(body.get("name", "")).strip()
+    if not name:
+        raise HTTPException(400, "Segment name is required.")
+    color = str(body.get("color", "#111111"))
+    match_type = str(body.get("match_type", "all")).lower()
+    rules = body.get("rules", {})
+    is_pinned = bool(body.get("is_pinned", True))
+    daily_digest = bool(body.get("daily_digest", False))
+    digest_time = str(body.get("digest_time", "09:00 NPT"))
+
+    segment = SmartSegment(
+        name=name,
+        color=color,
+        match_type=match_type,
+        rules=json.dumps(rules),
+        is_pinned=is_pinned,
+        daily_digest=daily_digest,
+        digest_time=digest_time,
+    )
+    db.add(segment)
+    db.commit()
+    return {"success": True, "id": segment.id, "name": segment.name}
+
+
+@app.put("/admin/crm/api/segments/{segment_id}")
+async def crm_api_update_segment(
+    segment_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    segment = db.get(SmartSegment, segment_id)
+    if not segment:
+        raise HTTPException(404, "Segment not found.")
+    body = await request.json()
+    if "name" in body:
+        segment.name = str(body["name"]).strip()
+    if "color" in body:
+        segment.color = str(body["color"]).strip()
+    if "match_type" in body:
+        segment.match_type = str(body["match_type"]).lower()
+    if "rules" in body:
+        segment.rules = json.dumps(body["rules"])
+    if "is_pinned" in body:
+        segment.is_pinned = bool(body["is_pinned"])
+    if "daily_digest" in body:
+        segment.daily_digest = bool(body["daily_digest"])
+    if "digest_time" in body:
+        segment.digest_time = str(body["digest_time"])
+    segment.updated_at = datetime.utcnow()
+    db.commit()
+    return {"success": True, "id": segment.id}
+
+
+@app.delete("/admin/crm/api/segments/{segment_id}")
+async def crm_api_delete_segment(
+    segment_id: int,
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    segment = db.get(SmartSegment, segment_id)
+    if not segment:
+        raise HTTPException(404, "Segment not found.")
+    db.delete(segment)
+    db.commit()
+    return {"success": True}
+
+
+@app.post("/admin/crm/api/segments/preview")
+async def crm_api_preview_segment(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    body = await request.json()
+    rules = body.get("rules", {})
+    match_type = str(body.get("match_type", "all")).lower()
+    return crm_service.calculate_segment_preview(db, rules, match_type)
+
+
+@app.get("/admin/crm/api/compare")
+def crm_api_compare(
+    request: Request,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    seg_a = request.query_params.get("seg_a", "")
+    seg_b = request.query_params.get("seg_b", "")
+    return crm_service.compare_segments(db, seg_a, seg_b)
+
+
+@app.post("/admin/crm/api/bulk/tags")
+async def crm_api_bulk_tags(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    customer_ids = body.get("customer_ids", [])
+    action = str(body.get("action", "add")).lower()
+    tag = str(body.get("tag", "")).strip()
+    if not tag:
+        raise HTTPException(400, "Tag cannot be empty.")
+
+    target_customers = db.query(User).filter(User.id.in_(customer_ids), User.role == "customer").all()
+    prev_states = {c.id: c.tags for c in target_customers}
+
+    for c in target_customers:
+        curr = c.tag_list
+        if action == "add":
+            if tag not in curr:
+                curr.append(tag)
+        elif action == "remove":
+            curr = [t for t in curr if t != tag]
+        c.tags = ",".join(curr)
+
+    db.commit()
+    undo_token = crm_service.record_undo_action("tags", prev_states)
+    return {"success": True, "affected_count": len(target_customers), "undo_token": undo_token}
+
+
+@app.post("/admin/crm/api/bulk/consent")
+async def crm_api_bulk_consent(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    customer_ids = body.get("customer_ids", [])
+    new_status = str(body.get("marketing_status", "subscribed")).lower()
+    if new_status not in {"subscribed", "not_opted_in", "unsubscribed"}:
+        raise HTTPException(400, "Invalid marketing status.")
+
+    target_customers = db.query(User).filter(User.id.in_(customer_ids), User.role == "customer").all()
+    prev_states = {c.id: c.resolved_marketing_status for c in target_customers}
+
+    for c in target_customers:
+        c.marketing_status = new_status
+        c.marketing_opt_in = (new_status == "subscribed")
+
+    db.commit()
+    undo_token = crm_service.record_undo_action("consent", prev_states)
+    return {"success": True, "affected_count": len(target_customers), "undo_token": undo_token}
+
+
+@app.post("/admin/crm/api/bulk/email")
+async def crm_api_bulk_email(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    customer_ids = body.get("customer_ids", [])
+    template_type = str(body.get("template_type", "marketing")).lower()
+    subject = str(body.get("subject", "")).strip() or "Update from All of Us"
+    message_body = str(body.get("body", "")).strip()
+    schedule = str(body.get("schedule", "immediate")).lower()
+
+    target_customers = db.query(User).filter(User.id.in_(customer_ids), User.role == "customer").all()
+
+    recipients = []
+    excluded = []
+    for c in target_customers:
+        if template_type == "marketing" and not c.marketing_opt_in:
+            excluded.append(c)
+        else:
+            recipients.append(c)
+
+    for c in recipients:
+        rendered_body = message_body.replace("{{first_name}}", c.first_name).replace("{{last_name}}", c.last_name).replace("{{email}}", c.email).replace("{{store_name}}", "All of Us Studio")
+        spend = sum((o.total_amount for o in c.orders if o.status != "Cancelled"), Decimal("0.00"))
+        rendered_body = rendered_body.replace("{{total_spend}}", f"Rs {spend:.2f}")
+
+        sched_note = " (Scheduled for Morning 09:00 NPT)" if schedule == "morning" else ""
+        db.add(CustomerInteraction(
+            customer_id=c.id,
+            type="email",
+            title=f"Bulk Email: {subject}{sched_note}",
+            content=rendered_body,
+            author_id=admin.id,
+            author_name=f"{admin.first_name} {admin.last_name}",
+            created_at=datetime.utcnow(),
+        ))
+
+    db.commit()
+    return {
+        "success": True,
+        "sent_count": len(recipients),
+        "excluded_count": len(excluded),
+        "schedule": schedule,
+    }
+
+
+@app.post("/admin/crm/api/bulk/undo")
+async def crm_api_bulk_undo(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    body = await request.json()
+    token = str(body.get("undo_token", "")).strip()
+    success, message = crm_service.perform_undo_action(db, token)
+    if not success:
+        raise HTTPException(400, message)
+    return {"success": True, "message": message}
 
 
 @app.get("/admin/inventory", name="admin_inventory", response_class=HTMLResponse)
@@ -4315,12 +4959,38 @@ async def update_order_fulfillment(
 def export_customers(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
     output = io.StringIO(newline="")
     writer = csv.writer(output)
-    writer.writerow(["First name", "Last name", "Email", "Phone", "Marketing opt-in", "Orders", "Total spend", "Registered"])
-    for customer in filtered_customers(db, request, default_opt_in="yes"):
-        spend = sum((order.total_amount for order in customer.orders), Decimal("0.00"))
-        writer.writerow([customer.first_name, customer.last_name, customer.email, customer.phone,
-                         "yes" if customer.marketing_opt_in else "no", len(customer.orders),
-                         f"{spend:.2f}", customer.created_at.isoformat()])
+    writer.writerow([
+        "First name", "Last name", "Email", "Phone", "Marketing opt-in",
+        "Channel", "Acquisition type", "Tags", "Rank", "Orders", "Total spend", "Registered"
+    ])
+    
+    ids_param = request.query_params.get("ids", "") or request.query_params.get("selected_ids", "")
+    if ids_param:
+        try:
+            target_ids = [int(i.strip()) for i in ids_param.split(",") if i.strip().isdigit()]
+            customers = db.query(User).filter(User.id.in_(target_ids), User.role == "customer").order_by(User.created_at.desc()).all()
+        except Exception:
+            customers = filtered_customers(db, request, default_opt_in="yes")
+    else:
+        customers = filtered_customers(db, request, default_opt_in="yes")
+
+    for customer in customers:
+        orders = [o for o in customer.orders if o.status != "Cancelled"]
+        spend = sum((order.total_amount for order in orders), Decimal("0.00"))
+        writer.writerow([
+            customer.first_name,
+            customer.last_name,
+            customer.email,
+            customer.phone,
+            "yes" if customer.marketing_opt_in else "no",
+            customer.acquisition_channel,
+            customer.acquisition_type,
+            customer.tags,
+            crm_service.compute_customer_rank(spend),
+            len(orders),
+            f"{spend:.2f}",
+            customer.created_at.isoformat() if customer.created_at else "",
+        ])
     return Response(output.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": "attachment; filename=all-of-us-customers.csv"})
 
