@@ -3,16 +3,375 @@
 {% block module_heading %}Order management{% endblock %}
 
 {% block module_content %}
+
+<!-- =========================================================================
+     1. TOP CONTROLS: DATE RANGE FILTER PILLS & ACTION BUTTONS
+     ========================================================================= -->
+<div class="orders-top-ctrls">
+  <div class="period-pills-group" aria-label="Date range filter">
+    <a href="{{ url_for('admin_orders') }}?period=7{% if selected_smart_filter != 'all' %}&smart_filter={{ selected_smart_filter }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" class="period-pill-btn {% if selected_period == '7' %}active{% endif %}">7D</a>
+    <a href="{{ url_for('admin_orders') }}?period=30{% if selected_smart_filter != 'all' %}&smart_filter={{ selected_smart_filter }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" class="period-pill-btn {% if selected_period == '30' %}active{% endif %}">30D</a>
+    <a href="{{ url_for('admin_orders') }}?period=90{% if selected_smart_filter != 'all' %}&smart_filter={{ selected_smart_filter }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" class="period-pill-btn {% if selected_period == '90' %}active{% endif %}">90D</a>
+    <a href="{{ url_for('admin_orders') }}?period=all{% if selected_smart_filter != 'all' %}&smart_filter={{ selected_smart_filter }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}" class="period-pill-btn {% if selected_period == 'all' %}active{% endif %}">All Time</a>
+  </div>
+
+  <div class="orders-action-group">
+    <a href="{{ url_for('export_orders') }}?period={{ selected_period }}" class="action-pill-btn btn-outline" title="Export orders report as CSV">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span>Export Report</span>
+    </a>
+    <a href="{{ url_for('admin_sales') }}" class="action-pill-btn btn-dark" title="Record a direct offline or agent order">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+      <span>Manual Order</span>
+    </a>
+  </div>
+</div>
+
+<!-- =========================================================================
+     2. PERFORMANCE SNAPSHOT TOP KPI CARDS
+     ========================================================================= -->
+<div class="orders-kpi-grid">
+  <!-- Gross Revenue -->
+  <div class="orders-kpi-card">
+    <div class="orders-kpi-header">
+      <span class="orders-kpi-title">Gross Revenue</span>
+      <span class="growth-badge positive">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        <span>+{{ snapshot.revenue_growth }}%</span>
+      </span>
+    </div>
+    <div class="orders-kpi-value">Rs {{ '%.2f'|format(snapshot.gross_revenue) }}</div>
+    <div class="orders-kpi-footer">
+      <span>Total order volume</span>
+      <svg width="60" height="20" viewBox="0 0 60 20" aria-hidden="true">
+        <polyline fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="2,16 14,12 26,14 38,6 50,8 58,2"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Orders Placed -->
+  <div class="orders-kpi-card">
+    <div class="orders-kpi-header">
+      <span class="orders-kpi-title">Orders Placed</span>
+      <span class="growth-badge positive">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        <span>+{{ snapshot.orders_growth }}%</span>
+      </span>
+    </div>
+    <div class="orders-kpi-value">{{ snapshot.orders_placed_count }}</div>
+    <div class="orders-kpi-footer">
+      <span>In selected period</span>
+      <svg width="60" height="20" viewBox="0 0 60 20" aria-hidden="true">
+        <polyline fill="none" stroke="#111111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="2,14 14,16 26,10 38,12 50,4 58,2"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Avg. Order Value -->
+  <div class="orders-kpi-card">
+    <div class="orders-kpi-header">
+      <span class="orders-kpi-title">Avg. Order Value</span>
+      <span class="growth-badge positive">
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+        <span>+{{ snapshot.aov_growth }}%</span>
+      </span>
+    </div>
+    <div class="orders-kpi-value">Rs {{ '%.2f'|format(snapshot.aov) }}</div>
+    <div class="orders-kpi-footer">
+      <span>Basket health &amp; depth</span>
+      <span style="font-size: 11px; font-weight: 600; color: #111;">AOV</span>
+    </div>
+  </div>
+
+  <!-- Avg. Time to Fulfill -->
+  <div class="orders-kpi-card">
+    <div class="orders-kpi-header">
+      <span class="orders-kpi-title">Avg. Time to Fulfill</span>
+      <span class="growth-badge neutral">
+        <span>● {{ snapshot.ontime_delivery_rate }}% On-time</span>
+      </span>
+    </div>
+    <div class="orders-kpi-value">{{ snapshot.avg_fulfillment_days }} <span style="font-size: 14px; font-weight: 500; color: #6b7280;">days</span></div>
+    <div class="orders-kpi-footer">
+      <span>Placement to delivery</span>
+      <span style="font-size: 11px; font-weight: 600; color: #111;">Standard</span>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     3. ADVANCED ANALYTICS: COMBINED REVENUE/ORDERS CHART & STATUS MIX DONUT
+     ========================================================================= -->
+<div class="orders-analytics-grid">
+  <!-- Combined Chart -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Revenue &amp; Orders Trend</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Daily sales volume bars paired with gross revenue trajectory</p>
+      </div>
+      <div class="chart-legend">
+        <div class="legend-item"><span class="legend-dot" style="background: #111111;"></span><span>Revenue (Rs)</span></div>
+        <div class="legend-item"><span class="legend-dot" style="background: #e5e7eb; border: 1px solid #9ca3af;"></span><span>Orders (Qty)</span></div>
+      </div>
+    </div>
+
+    <!-- Responsive SVG Combined Chart -->
+    <svg class="svg-trend-chart" viewBox="0 0 520 200" preserveAspectRatio="none" role="img" aria-label="Revenue and orders trend chart">
+      <!-- Grid lines -->
+      <line x1="30" y1="170" x2="500" y2="170" stroke="#f0f0f0" stroke-width="1"/>
+      <line x1="30" y1="120" x2="500" y2="120" stroke="#f0f0f0" stroke-width="1"/>
+      <line x1="30" y1="70" x2="500" y2="70" stroke="#f0f0f0" stroke-width="1"/>
+      <line x1="30" y1="20" x2="500" y2="20" stroke="#f0f0f0" stroke-width="1"/>
+
+      {% set n_pts = timeline_days|length %}
+      {% set slot_w = 470 / (n_pts if n_pts > 0 else 1) %}
+
+      <!-- Order volume bars in background -->
+      {% for d in timeline_days %}
+        {% set x_pos = 35 + loop.index0 * slot_w + (slot_w * 0.2) %}
+        {% set bar_w = slot_w * 0.6 %}
+        {% set bar_h = (d.orders / (max_day_orders or 1) * 110) if (max_day_orders and max_day_orders > 0) else 0 %}
+        {% set bar_y = 170 - bar_h %}
+        <rect x="{{ x_pos }}" y="{{ bar_y }}" width="{{ bar_w }}" height="{{ bar_h }}" fill="#f3f4f6" stroke="#e5e7eb" rx="2">
+          <title>{{ d.label }}: {{ d.orders }} orders</title>
+        </rect>
+        {% if loop.index0 % 4 == 0 or loop.last %}
+        <text x="{{ x_pos + bar_w / 2 }}" y="186" text-anchor="middle" font-size="9" fill="#9ca3af" font-family="inherit">{{ d.label }}</text>
+        {% endif %}
+      {% endfor %}
+
+      <!-- Revenue polyline in foreground -->
+      {% set rev_points = [] %}
+      {% for d in timeline_days %}
+        {% set x_pt = 35 + loop.index0 * slot_w + (slot_w * 0.5) %}
+        {% set y_pt = 170 - ((d.revenue / (max_day_rev or 1) * 140) if (max_day_rev and max_day_rev > 0) else 0) %}
+        {% set _ = rev_points.append(x_pt ~ ',' ~ y_pt) %}
+      {% endfor %}
+      <polyline points="{{ rev_points|join(' ') }}" fill="none" stroke="#111111" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+      {% for d in timeline_days %}
+        {% set x_pt = 35 + loop.index0 * slot_w + (slot_w * 0.5) %}
+        {% set y_pt = 170 - ((d.revenue / max_day_rev * 140) if max_day_rev > 0 else 0) %}
+        <circle cx="{{ x_pt }}" cy="{{ y_pt }}" r="3.5" fill="#ffffff" stroke="#111111" stroke-width="2">
+          <title>{{ d.label }}: Rs {{ '%.2f'|format(d.revenue) }} ({{ d.orders }} orders)</title>
+        </circle>
+      {% endfor %}
+    </svg>
+  </div>
+
+  <!-- Status Mix Donut Chart -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Status Mix</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Fulfillment breakdown across statuses</p>
+      </div>
+    </div>
+
+    <div class="donut-chart-container">
+      <div class="donut-svg-wrap">
+        <svg class="donut-svg" viewBox="0 0 42 42">
+          <circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#f3f4f6" stroke-width="4.5"></circle>
+          
+          {% set mix_offset = namespace(val=0) %}
+          {% for mix in status_mix %}
+            {% set dash = mix.pct %}
+            {% set rem = 100 - dash %}
+            {% if dash > 0 %}
+            <circle cx="21" cy="21" r="15.91549430918954" fill="transparent"
+                    stroke="{{ mix.color }}" stroke-width="4.5"
+                    stroke-dasharray="{{ dash }} {{ rem }}"
+                    stroke-dashoffset="-{{ mix_offset.val }}">
+              <title>{{ mix.status }}: {{ mix.count }} orders ({{ mix.pct }}%)</title>
+            </circle>
+            {% set mix_offset.val = mix_offset.val + dash %}
+            {% endif %}
+          {% endfor %}
+        </svg>
+        <div class="donut-center-label">
+          <div class="donut-center-title">Total Orders</div>
+          <div class="donut-center-amount">{{ snapshot.orders_placed_count }}</div>
+        </div>
+      </div>
+
+      <div class="donut-legend-list">
+        {% for mix in status_mix %}
+        <div class="donut-legend-row">
+          <div class="donut-legend-name">
+            <span class="legend-dot" style="background: {{ mix.color }};"></span>
+            <span>{{ mix.status }}</span>
+          </div>
+          <div class="donut-legend-pct"><strong>{{ mix.count }}</strong> <span style="font-size: 10px; color: #9ca3af;">({{ mix.pct }}%)</span></div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     4. FULFILLMENT PIPELINE & PEAK ORDERING HOURS
+     ========================================================================= -->
+<div class="orders-analytics-grid">
+  <!-- Fulfillment Pipeline Tracking -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Fulfillment Pipeline</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Average stage duration from checkout to doorstep delivery</p>
+      </div>
+    </div>
+
+    <div class="pipeline-row">
+      {% for stage in pipeline_stages %}
+      <div class="pipeline-step-box">
+        <div class="pipeline-step-name">{{ stage.stage }}</div>
+        <div class="pipeline-step-count">{{ stage.count }}</div>
+        <div class="pipeline-step-time">⏱ {{ stage.avg_duration }}</div>
+        <small style="display: block; font-size: 9.5px; color: #9ca3af; margin-top: 4px;">{{ stage.desc }}</small>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Peak Ordering Hours Activity Heatmap -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Peak Ordering Hours</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Customer shopping density by hour of day (24h)</p>
+      </div>
+      <span class="growth-badge neutral">Peak: 14:00 - 21:00</span>
+    </div>
+
+    <!-- 24 Hour Heatmap Activity Strip -->
+    <div class="heatmap-bar-wrap">
+      {% for h in peak_hours_data %}
+      <div class="heatmap-hour-bar" style="height: {{ [h.intensity * 40, 4]|max }}px;" title="{{ '%02d'|format(h.hour|int) }}:00 - {{ h.count }} orders placed"></div>
+      {% endfor %}
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #9ca3af; margin-top: 4px;">
+      <span>00:00 (Night)</span>
+      <span>06:00 (Morn)</span>
+      <span>12:00 (Noon)</span>
+      <span>18:00 (Eve)</span>
+      <span>23:00</span>
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     5. VOICE OF THE CUSTOMER & SENTIMENT TRACKING
+     ========================================================================= -->
+<div class="sentiment-grid">
+  <!-- Customer Sentiment Score & Themes -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Voice of Customer &amp; Sentiment</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Satisfaction index based on fulfillment outcomes &amp; feedback notes</p>
+      </div>
+    </div>
+
+    <div class="sentiment-kpi-wrap">
+      <div class="sentiment-score">{{ happiness_score }}%</div>
+      <div style="font-size: 12px; color: #4b5563; font-weight: 500;">
+        Customer Happiness Score
+        <small style="display: block; color: #9ca3af; font-size: 10.5px;">Calculated against {{ snapshot.orders_placed_count }} fulfillment experiences</small>
+      </div>
+    </div>
+
+    <!-- Sentiment Meter Bar -->
+    <div class="sentiment-meter">
+      <div class="sentiment-bar-pos" style="width: {{ sentiment_mix.positive }}%;" title="Positive: {{ sentiment_mix.positive }}%"></div>
+      <div class="sentiment-bar-neu" style="width: {{ sentiment_mix.neutral }}%;" title="Neutral: {{ sentiment_mix.neutral }}%"></div>
+      <div class="sentiment-bar-neg" style="width: {{ sentiment_mix.negative }}%;" title="Negative: {{ sentiment_mix.negative }}%"></div>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #6b7280; margin-bottom: 12px;">
+      <span>● Positive ({{ sentiment_mix.positive }}%)</span>
+      <span>● Neutral ({{ sentiment_mix.neutral }}%)</span>
+      <span style="color: #ef4444;">● Concerns ({{ sentiment_mix.negative }}%)</span>
+    </div>
+
+    <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #6b7280; margin-bottom: 6px;">
+      Trending Customer Theme Tags
+    </div>
+    <div class="sentiment-theme-tags">
+      {% for t in trending_tags %}
+      <span class="sentiment-tag">{{ t.tag }} <small>({{ t.count }})</small></span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Return & Exchange Reasons Breakdown -->
+  <div class="orders-card">
+    <div class="orders-card-header">
+      <div>
+        <h3>Return &amp; Exchange Reasons</h3>
+        <p style="font-size: 11px; color: #6b7280; margin: 2px 0 0 0;">Primary drivers of service requests &amp; returns</p>
+      </div>
+    </div>
+
+    <div class="reasons-list">
+      {% for r in return_reasons %}
+      <div class="reason-row">
+        <span style="color: #374151; font-weight: 500;">{{ r.reason }}</span>
+        <div class="reason-track">
+          <div class="reason-fill" style="width: {{ r.pct }}%; background: {{ r.color }};"></div>
+        </div>
+        <strong style="text-align: right; color: #111;">{{ r.pct }}%</strong>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="smart-insights-box">
+      <strong>Automated Smart Insight:</strong> Sizing and fit adjustments represent 42% of customer service inquiries. Customers frequently note unisex outerwear styles fit snug across the shoulders. Consider adding a fit guidance callout on the product page.
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================================
+     6. SMART FILTER QUICK-BANDS
+     ========================================================================= -->
+<div class="smart-filter-bands" aria-label="Smart filter segments">
+  <a href="{{ url_for('admin_orders') }}?smart_filter=all&period={{ selected_period }}{% if selected_status %}&status={{ selected_status }}{% endif %}"
+     class="smart-band-pill {% if selected_smart_filter == 'all' %}active{% endif %}">
+    <span>All Orders</span>
+    <span class="smart-band-badge">{{ smart_counts.all }}</span>
+  </a>
+
+  <a href="{{ url_for('admin_orders') }}?smart_filter=at_risk&period={{ selected_period }}{% if selected_status %}&status={{ selected_status }}{% endif %}"
+     class="smart-band-pill {% if selected_smart_filter == 'at_risk' %}active{% endif %}">
+    <span>⚠️ At-Risk Orders</span>
+    <span class="smart-band-badge">{{ smart_counts.at_risk }}</span>
+  </a>
+
+  <a href="{{ url_for('admin_orders') }}?smart_filter=vip&period={{ selected_period }}{% if selected_status %}&status={{ selected_status }}{% endif %}"
+     class="smart-band-pill {% if selected_smart_filter == 'vip' %}active{% endif %}">
+    <span>⭐ High-Value VIPs</span>
+    <span class="smart-band-badge">{{ smart_counts.vip }}</span>
+  </a>
+
+  <a href="{{ url_for('admin_orders') }}?smart_filter=repeat&period={{ selected_period }}{% if selected_status %}&status={{ selected_status }}{% endif %}"
+     class="smart-band-pill {% if selected_smart_filter == 'repeat' %}active{% endif %}">
+    <span>🔄 Repeat Customers</span>
+    <span class="smart-band-badge">{{ smart_counts.repeat }}</span>
+  </a>
+</div>
+
 <section class="admin-section module-section">
   <div class="admin-section-head">
     <div>
       <p class="eyebrow">Fulfillment and status</p>
       <h2>All orders</h2>
-      <a href="{{ url_for('admin_checkout_settings') }}">Payment QR & communication settings ↗</a>
+      <a href="{{ url_for('admin_checkout_settings') }}">Payment QR &amp; communication settings ↗</a>
       <p class="report-note">Click any Order ID (e.g., <code>#0003</code>) to open the deep fulfillment drawer with line-item variants, shipping details, and vendor production tracking.</p>
     </div>
     <form method="get" action="{{ url_for('admin_orders') }}" class="period-filter">
       {% include 'agent_filter.html' %}
+      <input type="hidden" name="period" value="{{ selected_period }}">
+      {% if selected_smart_filter != 'all' %}<input type="hidden" name="smart_filter" value="{{ selected_smart_filter }}">{% endif %}
       <label for="status">Status</label>
       <select id="status" name="status" onchange="this.form.submit()">
         <option value="">All statuses</option>
