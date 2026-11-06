@@ -45,7 +45,20 @@
     {% block content %}{% endblock %}
   </main>
   {% if not is_admin_dashboard %}
-  <footer class="site-footer"><a class="wordmark footer-mark brand-link" href="{{ url_for('storefront') }}" aria-label="All of Us home"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="64" height="64" loading="lazy"></a><span>{{ site_content.footer_tagline }}</span><div class="footer-links"><a href="{{ url_for('about_page') }}">About</a><a href="{{ url_for('contact_page') }}">Contact</a><a href="{{ url_for('admin_login') }}">Team access</a></div></footer>
+  <footer class="site-footer">
+    <a class="wordmark footer-mark brand-link" href="{{ url_for('storefront') }}" aria-label="All of Us home"><img class="brand-logo" src="{{ url_for('static', filename='fav-icon.png') }}" alt="All of Us" width="64" height="64" loading="lazy"></a>
+    <span>{{ site_content.footer_tagline }}</span>
+    <div class="footer-links">
+      <a href="{{ url_for('about_page') }}">About</a>
+      <a href="{{ url_for('contact_page') }}">Contact</a>
+      <a href="{{ url_for('admin_login') }}">Team access</a>
+      <div class="footer-social-links" aria-label="Social media">
+        {% if social_instagram %}<a class="footer-social-link" href="{{ social_instagram }}" target="_blank" rel="noopener noreferrer" aria-label="Instagram"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg></a>{% endif %}
+        {% if social_facebook %}<a class="footer-social-link" href="{{ social_facebook }}" target="_blank" rel="noopener noreferrer" aria-label="Facebook"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg></a>{% endif %}
+        {% if social_tiktok %}<a class="footer-social-link" href="{{ social_tiktok }}" target="_blank" rel="noopener noreferrer" aria-label="TikTok"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5"/></svg></a>{% endif %}
+      </div>
+    </div>
+  </footer>
   {% endif %}
   <script src="{{ url_for('static', filename='app.js') }}?v=20261028-6" defer></script>
   <link rel="stylesheet" href="{{ url_for('static', filename='variants.css') }}?v=1">
