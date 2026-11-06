@@ -1,253 +1,679 @@
 {% extends "admin_base.html" %}
 {% block module_title %}Sales{% endblock %}
-{% block module_heading %}Sales management{% endblock %}
+{% block module_heading %}Sales & Financial Operations{% endblock %}
 
-{% block module_content %}<p class="report-note">Completed agent commission: Rs {{ '%.2f'|format(agent_commission) }}</p>
-<!-- Executive KPI Cards: Gross Revenue, Net Revenue, AOV, Total Units Sold, Manufacturing Margin -->
-<section class="metrics-grid sales-metrics executive-kpi-grid">
-  <article class="metric metric-dark">
-    <span>Gross Revenue</span>
-    <strong>Rs {{ '%.2f'|format(gross_revenue) }}</strong>
-    <small>Pre-discounts & returns</small>
-  </article>
-  <article class="metric metric-dark">
-    <span>Net Revenue</span>
-    <strong>Rs {{ '%.2f'|format(net_revenue) }}</strong>
-    <small>Post-discounts across {{ order_count }} orders</small>
-  </article>
-  <article class="metric metric-mid">
-    <span>Average Order Value (AOV)</span>
-    <strong>Rs {{ '%.2f'|format(average_order) }}</strong>
-    <small>Revenue per transaction</small>
-  </article>
-  <article class="metric metric-light">
-    <span>Total Units Sold</span>
-    <strong>{{ total_units_sold }} pcs</strong>
-    <small>Streetwear garments dispatched</small>
-  </article>
-  <article class="metric metric-dark" style="background: #1e252b; border-color: #313c47;">
-    <span>Est. Manufacturing Margin</span>
-    <strong>{{ '%.1f'|format(gross_margin_pct) }}%</strong>
-    <small>Rs {{ '%.2f'|format(gross_profit) }} gross profit (Vendor COGS)</small>
-  </article>
-</section>
-
-<!-- Channel Breakdown Strip (In-Store vs Online) -->
-<section class="sales-channel-strip">
-  <div class="channel-chip">
-    <span class="chip-label">🏪 In-store sales:</span>
-    <strong>Rs {{ '%.2f'|format(store_revenue) }}</strong>
-    <small>({{ store_orders_count }} transactions)</small>
-  </div>
-  <div class="channel-chip">
-    <span class="chip-label">🚚 Online delivery:</span>
-    <strong>Rs {{ '%.2f'|format(online_revenue) }}</strong>
-    <small>({{ online_orders_count }} shipments)</small>
-  </div>
-  {% if total_discounts > 0 %}
-  <div class="channel-chip chip-discount">
-    <span class="chip-label">🏷️ Promo deductions:</span>
-    <strong>-Rs {{ '%.2f'|format(total_discounts) }}</strong>
-    <small>campaign promos</small>
-  </div>
-  {% endif %}
-</section>
-
-<!-- Action Header: Date Range Filter & Record Sale + Export Buttons -->
-<section class="admin-section" style="padding-top: 15px;">
-  <div class="admin-section-head">
-    <div>
-      <p class="eyebrow">Financial analytics & operations</p>
-      <h2>Sales & profit reporting</h2>
+{% block module_content %}
+<!-- ==========================================================================
+     TOP CONTROL BAR & FILTERS
+     ========================================================================== -->
+<div class="sales-top-ctrls">
+  <div class="sales-filter-row">
+    <!-- Date Range Filter Pills -->
+    <div class="period-pills-group">
+      <a href="{{ url_for('admin_sales') }}?period=today&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == 'today' %}active{% endif %}">Today</a>
+      <a href="{{ url_for('admin_sales') }}?period=7&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == '7' %}active{% endif %}">7D</a>
+      <a href="{{ url_for('admin_sales') }}?period=30&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == '30' %}active{% endif %}">30D</a>
+      <a href="{{ url_for('admin_sales') }}?period=90&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == '90' %}active{% endif %}">90D</a>
+      <a href="{{ url_for('admin_sales') }}?period=qtd&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == 'qtd' %}active{% endif %}">QTD</a>
+      <a href="{{ url_for('admin_sales') }}?period=ytd&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == 'ytd' %}active{% endif %}">YTD</a>
+      <a href="{{ url_for('admin_sales') }}?period=all&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}"
+         class="period-pill-btn {% if period == 'all' %}active{% endif %}">All Time</a>
+      <a href="javascript:void(0)" onclick="document.getElementById('custom-date-panel').style.display = (document.getElementById('custom-date-panel').style.display === 'none' ? 'flex' : 'none')"
+         class="period-pill-btn {% if period == 'custom' %}active{% endif %}">Custom ▾</a>
     </div>
-    <div class="sales-head-actions">
-      <!-- Date Range Filter -->
-      <form method="get" action="{{ url_for('admin_sales') }}" class="period-filter">
-        {% include 'agent_filter.html' %}
-        <label for="period">Date Range</label>
-        <select id="period" name="period" onchange="this.form.submit()">
-          <option value="today" {% if period == 'today' %}selected{% endif %}>Today</option>
-          <option value="7" {% if period == '7' %}selected{% endif %}>Last 7 days</option>
-          <option value="30" {% if period == '30' %}selected{% endif %}>Last 30 days</option>
-          <option value="90" {% if period == '90' %}selected{% endif %}>Last 90 days</option>
-          <option value="all" {% if period == 'all' %}selected{% endif %}>All time</option>
+
+    <!-- Channel Dropdown -->
+    <form method="get" action="{{ url_for('admin_sales') }}" style="display: inline-flex; align-items: center; margin: 0;">
+      <input type="hidden" name="period" value="{{ period }}">
+      <input type="hidden" name="agent_id" value="{{ selected_agent }}">
+      <input type="hidden" name="compare" value="{{ 1 if compare else 0 }}">
+      <input type="hidden" name="margin_threshold" value="{{ margin_threshold }}">
+      <select name="channel" onchange="this.form.submit()" class="sales-select-filter">
+        <option value="all" {% if selected_channel == 'all' %}selected{% endif %}>All Channels</option>
+        <option value="In-store" {% if selected_channel == 'In-store' %}selected{% endif %}>🏪 In-store Sales</option>
+        <option value="Online delivery" {% if selected_channel == 'Online delivery' %}selected{% endif %}>🚚 Online Delivery</option>
+      </select>
+    </form>
+
+    <!-- Agent Dropdown -->
+    <form method="get" action="{{ url_for('admin_sales') }}" style="display: inline-flex; align-items: center; margin: 0;">
+      <input type="hidden" name="period" value="{{ period }}">
+      <input type="hidden" name="channel" value="{{ selected_channel }}">
+      <input type="hidden" name="compare" value="{{ 1 if compare else 0 }}">
+      <input type="hidden" name="margin_threshold" value="{{ margin_threshold }}">
+      <select name="agent_id" onchange="this.form.submit()" class="sales-select-filter">
+        <option value="">All Sales (Direct & Agents)</option>
+        {% for ag in agents %}
+        <option value="{{ ag.id }}" {% if selected_agent|string == ag.id|string %}selected{% endif %}>{{ ag.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <!-- Compare Toggle Button -->
+    <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 0 if compare else 1 }}&amp;margin_threshold={{ margin_threshold }}"
+       class="compare-toggle-pill {% if compare %}active{% endif %}" title="Toggle prior period comparison">
+      <span>⇄</span> Compare {% if compare %}<strong>(Active)</strong>{% endif %}
+    </a>
+
+    <!-- Order Count Indicator -->
+    <span class="order-count-indicator">
+      ● {{ order_count }} order{{ 's' if order_count != 1 else '' }}
+    </span>
+
+    <!-- Reset Filter Button -->
+    {% if period != '30' or selected_channel != 'all' or selected_agent != '' or compare %}
+    <a href="{{ url_for('admin_sales') }}" class="button button-outline button-sm" style="height: 32px; padding: 0 10px; font-size: 11px;" title="Reset filters">
+      ✕ Reset
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- Quick Action Buttons -->
+  <div class="sales-action-group">
+    <button type="button" id="btn-open-sale-form" class="sales-action-btn btn-dark">
+      <span>+</span> Record New Sale
+    </button>
+    <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}"
+       class="sales-action-btn btn-outline" title="Download completed transaction ledger CSV">
+      <span>↓</span> Export CSV
+    </a>
+  </div>
+</div>
+
+<!-- Custom Date Range Picker Strip (Hidden by default) -->
+<form method="get" action="{{ url_for('admin_sales') }}" id="custom-date-panel" class="custom-date-box" style="display: {% if period == 'custom' %}flex{% else %}none{% endif %}; margin-bottom: 16px;">
+  <input type="hidden" name="period" value="custom">
+  <input type="hidden" name="channel" value="{{ selected_channel }}">
+  <input type="hidden" name="agent_id" value="{{ selected_agent }}">
+  <input type="hidden" name="compare" value="{{ 1 if compare else 0 }}">
+  <input type="hidden" name="margin_threshold" value="{{ margin_threshold }}">
+  <span>From:</span>
+  <input type="date" name="start_date" value="{{ start_date }}" class="custom-date-input" required>
+  <span>To:</span>
+  <input type="date" name="end_date" value="{{ end_date }}" class="custom-date-input" required>
+  <button type="submit" class="button button-dark button-sm" style="height: 28px; padding: 0 10px; font-size: 10.5px;">Apply Range</button>
+</form>
+
+<!-- ==========================================================================
+     TOP 5 EXECUTIVE KPI METRIC CARDS
+     ========================================================================== -->
+<section class="sales-kpi-grid">
+  <!-- Card 1: Gross Revenue -->
+  <div class="sales-kpi-card">
+    <div class="sales-kpi-header">
+      <span class="sales-kpi-title">Gross Revenue</span>
+      <span class="growth-badge {% if gross_rev_growth > 0 %}positive{% elif gross_rev_growth < 0 %}negative{% else %}neutral{% endif %}">
+        {{ '+' if gross_rev_growth > 0 else '' }}{{ gross_rev_growth }}%
+      </span>
+    </div>
+    <div class="sales-kpi-value">Rs {{ '%.2f'|format(gross_revenue) }}</div>
+    <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+      <p class="sales-kpi-subtext">Pre-discounts &amp; returns</p>
+      <svg class="sales-sparkline-svg" viewBox="0 0 90 26">
+        <polyline fill="none" stroke="#111111" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="{{ gross_sparkline }}"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Card 2: Net Revenue -->
+  <div class="sales-kpi-card">
+    <div class="sales-kpi-header">
+      <span class="sales-kpi-title">Net Revenue</span>
+      <span class="growth-badge {% if net_rev_growth > 0 %}positive{% elif net_rev_growth < 0 %}negative{% else %}neutral{% endif %}">
+        {{ '+' if net_rev_growth > 0 else '' }}{{ net_rev_growth }}%
+      </span>
+    </div>
+    <div class="sales-kpi-value">Rs {{ '%.2f'|format(net_revenue) }}</div>
+    <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+      <p class="sales-kpi-subtext">Across {{ order_count }} orders</p>
+      <svg class="sales-sparkline-svg" viewBox="0 0 90 26">
+        <polyline fill="none" stroke="#111111" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="{{ net_sparkline }}"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Card 3: Average Order Value (AOV) -->
+  <div class="sales-kpi-card">
+    <div class="sales-kpi-header">
+      <span class="sales-kpi-title">Avg Order Value (AOV)</span>
+      <span class="growth-badge {% if aov_growth > 0 %}positive{% elif aov_growth < 0 %}negative{% else %}neutral{% endif %}">
+        {{ '+' if aov_growth > 0 else '' }}{{ aov_growth }}%
+      </span>
+    </div>
+    <div class="sales-kpi-value">Rs {{ '%.2f'|format(average_order) }}</div>
+    <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+      <p class="sales-kpi-subtext">Revenue per transaction</p>
+      <svg class="sales-sparkline-svg" viewBox="0 0 90 26">
+        <polyline fill="none" stroke="#4b5563" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="{{ aov_sparkline }}"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Card 4: Total Units Sold -->
+  <div class="sales-kpi-card">
+    <div class="sales-kpi-header">
+      <span class="sales-kpi-title">Total Units Sold</span>
+      <span class="growth-badge {% if units_growth > 0 %}positive{% elif units_growth < 0 %}negative{% else %}neutral{% endif %}">
+        {{ '+' if units_growth > 0 else '' }}{{ units_growth }}%
+      </span>
+    </div>
+    <div class="sales-kpi-value">{{ total_units_sold }} pcs</div>
+    <div style="display: flex; align-items: flex-end; justify-content: space-between;">
+      <p class="sales-kpi-subtext">Dispatched streetwear</p>
+      <svg class="sales-sparkline-svg" viewBox="0 0 90 26">
+        <polyline fill="none" stroke="#111111" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="{{ units_sparkline }}"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Card 5: Estimated Manufacturing Margin -->
+  <div class="sales-kpi-card">
+    <div class="sales-kpi-header">
+      <span class="sales-kpi-title">Mfg Gross Margin</span>
+      <span class="growth-badge {% if gross_margin_pct >= target_margin_pct %}positive{% else %}neutral{% endif %}">
+        Target: {{ '%.0f'|format(target_margin_pct) }}%
+      </span>
+    </div>
+    <div class="sales-kpi-value">{{ '%.1f'|format(gross_margin_pct) }}%</div>
+    <div class="target-margin-bar" title="Target: {{ target_margin_pct }}%">
+      <div class="target-margin-fill" style="width: {{ [gross_margin_pct, 100]|min }}%;"></div>
+    </div>
+    <p class="sales-kpi-subtext" style="margin-top: 6px;">Rs {{ '%.2f'|format(gross_profit) }} profit (COGS: Rs {{ '%.2f'|format(total_cogs) }})</p>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     COLLAPSIBLE RECORD SALE FORM PANEL (Preserved with exact IDs for app.js)
+     ========================================================================== -->
+<div id="record-sale-panel" class="record-sale-container" style="display: none; margin-bottom: 24px;">
+  <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card" data-variant-sale>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="product-editor-heading">
+      <div>
+        <p class="eyebrow">Sales &amp; CRM Entry</p>
+        <h3 style="margin: 4px 0;">Record a product sale</h3>
+        <small style="color: #6b7280;">Enter products sold in-store or for online delivery. Verify and store customer details directly into CRM.</small>
+      </div>
+      <button type="button" class="button button-outline button-sm" id="btn-close-sale-panel">✕ Close</button>
+    </div>
+
+    <!-- Channel Selection -->
+    <div class="sale-channel-selector" style="margin-top: 14px;">
+      <span class="channel-label" style="font-size: 11px; font-weight: 600; display: block; margin-bottom: 6px;">Sales Channel / Fulfillment *</span>
+      <div class="channel-options" style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <label class="channel-option-card" style="flex: 1; min-width: 200px; border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; display: flex; gap: 8px; cursor: pointer;">
+          <input type="radio" name="channel" value="In-store" checked>
+          <div class="channel-card-content">
+            <strong style="display: block; font-size: 11.5px;">🏪 In-store purchase</strong>
+            <small style="font-size: 10px; color: #6b7280;">Sold directly at the store or studio pickup</small>
+          </div>
+        </label>
+        <label class="channel-option-card" style="flex: 1; min-width: 200px; border: 1px solid #e5e5e5; border-radius: 6px; padding: 10px; display: flex; gap: 8px; cursor: pointer;">
+          <input type="radio" name="channel" value="Online delivery">
+          <div class="channel-card-content">
+            <strong style="display: block; font-size: 11.5px;">🚚 Online delivery</strong>
+            <small style="font-size: 10px; color: #6b7280;">Ordered for delivery or courier shipping</small>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <!-- Product & Quantity Grid -->
+    <div class="product-editor-grid" style="margin-top: 16px;">
+      <label class="product-editor-wide">
+        <span>Select Product *</span>
+        <select name="product_id" id="sale-product-select" required data-variant-product>
+          <option value="" disabled selected>Choose a product from inventory...</option>
+          {% for prod in all_products %}
+            <option value="{{ prod.id }}" data-price="{{ '%.2f'|format(prod.price) }}" data-sizes="{{ prod.size_variations }}" data-colors='{{ product_colors(prod)|tojson }}' data-stock="{{ prod.stock_quantity }}">
+              {{ prod.name }} — Rs {{ '%.2f'|format(prod.price) }} ({{ prod.stock_quantity }} units in stock)
+            </option>
+          {% endfor %}
         </select>
-      </form>
-
-      <!-- Export to CSV / Excel Button -->
-      <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;agent_id={{ selected_agent }}" class="button button-outline export-ledger-btn" title="Download completed transaction ledger CSV for reconciliation">
-        <span class="download-icon">↓</span> Export to CSV
-      </a>
-
-      <!-- + Record New Sale Button -->
-      <button type="button" id="btn-open-sale-form" class="button button-dark open-sale-btn">
-        <span class="plus-icon">+</span> Record New Sale
-      </button>
+      </label>
+      <label>
+        <span>Quantity *</span>
+        <input type="number" name="quantity" id="sale-quantity-input" min="1" value="1" required>
+      </label>
+      <label>
+        <span>Unit Price (Rs) *</span>
+        <input type="number" name="price" id="sale-price-input" min="0.01" step="0.01" placeholder="0.00" required>
+      </label>
+      <label>
+        <span>Size / Variant</span>
+        <select name="size_variation" id="sale-size-input" data-variant-size></select>
+      </label>
+      <label>Color<select name="color_variation" data-variant-color></select></label>
+      <label>Selling agent
+        <select name="agent_id">
+          <option value="">Direct sale (no agent)</option>
+          {% for agent in agents %}
+            <option value="{{ agent.id }}">{{ agent.name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Stock source
+        <select name="allocation_id">
+          <option value="">Warehouse stock (new acquisition)</option>
+          {% for a in allocations %}
+            <option value="{{ a.id }}" data-agent="{{ a.agent_id }}" data-product="{{ a.product_id }}" data-size="{{ a.size_variation }}" data-color="{{ a.color_variation }}" data-discount="{{ a.company_discount_percent }}">
+              #{{ a.id }} {{ a.agent.name }} / {{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }} — {{ a.remaining }} left at Rs {{ a.unit_cost }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>Company discount (%)
+        <input name="company_discount_percent" type="number" min="0" max="100" step="0.01" value="10" required>
+        <small>Applied to list price for agent acquisition. Issued stock keeps its original cost.</small>
+      </label>
+      <label>Agent commission (%)
+        <input name="commission_percent" type="number" min="0" max="100" step="0.01" value="10" required>
+        <small>Commission = actual sale amount × this percentage.</small>
+      </label>
+      <label>
+        <span>Order Status</span>
+        <select name="status">
+          <option value="Completed" selected>Completed (Fulfilled)</option>
+          <option value="Processing">Processing</option>
+          <option value="Pending">Pending</option>
+        </select>
+      </label>
     </div>
-  </div>
 
-  <!-- Collapsible Record Sale Form Panel (Preserved seamlessly) -->
-  <div id="record-sale-panel" class="record-sale-container" style="display: none;">
-    <form method="post" action="{{ url_for('record_sale') }}" class="product-editor-card record-sale-card" data-variant-sale>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="product-editor-heading">
-        <div>
-          <p class="eyebrow">Sales & CRM Entry</p>
-          <h3>Record a product sale</h3>
-          <small>Enter products sold in-store or for online delivery. Verify and store customer details directly into CRM.</small>
-        </div>
-        <button type="button" class="button button-outline button-sm" id="btn-close-sale-panel">✕ Close</button>
+    <!-- Live Calculation Box -->
+    <div class="sale-total-box" style="margin-top: 14px; padding: 10px 14px; background: #f3f4f6; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
+      <span style="font-size: 11px; font-weight: 600;">Estimated Sale Total:</span>
+      <strong id="sale-total-display" style="font-size: 14px; color: #111111;">Rs 0.00</strong>
+    </div>
+
+    <!-- Customer Verification & CRM Section -->
+    <div class="sale-customer-section" style="margin-top: 16px; border-top: 1px solid #e5e5e5; padding-top: 14px;">
+      <div class="customer-section-head">
+        <p class="eyebrow" style="margin: 0;">Customer Verification &amp; CRM Persistence</p>
+        <small style="color: #6b7280;">Verify customer identity or register new contact to store in CRM</small>
       </div>
 
-      <!-- Channel Selection -->
-      <div class="sale-channel-selector">
-        <span class="channel-label">Sales Channel / Fulfillment *</span>
-        <div class="channel-options">
-          <label class="channel-option-card">
-            <input type="radio" name="channel" value="In-store" checked>
-            <div class="channel-card-content">
-              <strong>🏪 In-store purchase</strong>
-              <small>Sold directly at the store or studio pickup</small>
-            </div>
-          </label>
-          <label class="channel-option-card">
-            <input type="radio" name="channel" value="Online delivery">
-            <div class="channel-card-content">
-              <strong>🚚 Online delivery</strong>
-              <small>Ordered for delivery or courier shipping</small>
-            </div>
-          </label>
-        </div>
+      <div class="customer-toggle-row" style="display: flex; gap: 16px; margin-top: 8px;">
+        <label class="radio-label" style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+          <input type="radio" name="customer_type" value="existing" id="radio-cust-existing">
+          <span>Verify existing CRM customer</span>
+        </label>
+        <label class="radio-label" style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+          <input type="radio" name="customer_type" value="new" id="radio-cust-new" checked>
+          <span>Register new customer in CRM</span>
+        </label>
       </div>
 
-      <!-- Product & Quantity Grid -->
-      <div class="product-editor-grid" style="margin-top: 16px;">
-        <label class="product-editor-wide">
-          <span>Select Product *</span>
-          <select name="product_id" id="sale-product-select" required data-variant-product>
-            <option value="" disabled selected>Choose a product from inventory...</option>
-            {% for prod in all_products %}
-              <option value="{{ prod.id }}" data-price="{{ '%.2f'|format(prod.price) }}" data-sizes="{{ prod.size_variations }}" data-colors='{{ product_colors(prod)|tojson }}' data-stock="{{ prod.stock_quantity }}">
-                {{ prod.name }} — Rs {{ '%.2f'|format(prod.price) }} ({{ prod.stock_quantity }} units in stock)
+      <!-- Existing Customer Select -->
+      <div id="existing-customer-block" style="display: none; margin-top: 10px;">
+        <label style="display: grid; gap: 5px; font-size: 10px;">
+          <span>Choose customer from CRM directory:</span>
+          <select name="existing_user_id" id="existing-user-select" style="height: 36px; padding: 0 8px; font-size: 11px; border: 1px solid #e5e5e5; border-radius: 6px;">
+            <option value="">Select a registered customer...</option>
+            {% for cust in all_customers %}
+              <option value="{{ cust.id }}" data-email="{{ cust.email }}" data-phone="{{ cust.phone }}" data-name="{{ cust.first_name }} {{ cust.last_name }}">
+                {{ cust.first_name }} {{ cust.last_name }} — {{ cust.email }} {% if cust.phone %}({{ cust.phone }}){% endif %}
               </option>
             {% endfor %}
           </select>
         </label>
+      </div>
+
+      <!-- New Customer Fields -->
+      <div id="new-customer-block" class="product-editor-grid" style="margin-top: 10px;">
         <label>
-          <span>Quantity *</span>
-          <input type="number" name="quantity" id="sale-quantity-input" min="1" value="1" required>
+          <span>First Name</span>
+          <input name="first_name" id="cust-first-name" placeholder="First name">
         </label>
         <label>
-          <span>Unit Price (Rs) *</span>
-          <input type="number" name="price" id="sale-price-input" min="0.01" step="0.01" placeholder="0.00" required>
+          <span>Last Name</span>
+          <input name="last_name" id="cust-last-name" placeholder="Last name">
         </label>
         <label>
-          <span>Size / Variant</span>
-          <select name="size_variation" id="sale-size-input" data-variant-size></select>
+          <span>Email Address</span>
+          <input name="email" id="cust-email" type="email" placeholder="customer@example.com">
         </label>
-        <label>Color<select name="color_variation" data-variant-color></select></label>
-        <label>Selling agent<select name="agent_id"><option value="">Direct sale (no agent)</option>{% for agent in agents %}<option value="{{ agent.id }}">{{ agent.name }}</option>{% endfor %}</select></label>
-        <label>Stock source<select name="allocation_id"><option value="">Warehouse stock (new acquisition)</option>{% for a in allocations %}<option value="{{ a.id }}" data-agent="{{ a.agent_id }}" data-product="{{ a.product_id }}" data-size="{{ a.size_variation }}" data-color="{{ a.color_variation }}" data-discount="{{ a.company_discount_percent }}">#{{ a.id }} {{ a.agent.name }} / {{ a.product.name }} / {{ a.size_variation }} / {{ a.color_variation }} — {{ a.remaining }} left at Rs {{ a.unit_cost }}</option>{% endfor %}</select></label>
-        <label>Company discount (%)<input name="company_discount_percent" type="number" min="0" max="100" step="0.01" value="10" required><small>Applied to list price for agent acquisition. Issued stock keeps its original cost.</small></label>
-        <label>Agent commission (%)<input name="commission_percent" type="number" min="0" max="100" step="0.01" value="10" required><small>Commission = actual sale amount × this percentage.</small></label>
         <label>
-          <span>Order Status</span>
-          <select name="status">
-            <option value="Completed" selected>Completed (Fulfilled)</option>
-            <option value="Processing">Processing</option>
-            <option value="Pending">Pending</option>
-          </select>
+          <span>Phone Number</span>
+          <input name="phone" id="cust-phone" type="tel" placeholder="+977 9800000000">
+        </label>
+        <label class="active-toggle" style="grid-column: 1/-1; display: flex; align-items: center; gap: 6px; font-size: 10.5px;">
+          <input type="checkbox" name="marketing_opt_in" checked>
+          Marketing communications consent (opt-in)
         </label>
       </div>
 
-      <!-- Live Calculation Box -->
-      <div class="sale-total-box">
-        <span>Estimated Sale Total:</span>
-        <strong id="sale-total-display">Rs 0.00</strong>
+      <div class="crm-badge-note" style="margin-top: 10px; font-size: 10.5px; color: #4b5563; display: flex; align-items: center; gap: 6px;">
+        <span class="crm-check-icon" style="color: #059669; font-weight: bold;">✓</span>
+        <span>Order amount, purchased items, and customer profile will be permanently synchronized in the CRM directory.</span>
       </div>
+    </div>
 
-      <!-- Customer Verification & CRM Section -->
-      <div class="sale-customer-section">
-        <div class="customer-section-head">
-          <p class="eyebrow" style="margin: 0;">Customer Verification & CRM Persistence</p>
-          <small>Verify customer identity or register new contact to store in CRM</small>
-        </div>
+    <!-- Action Buttons -->
+    <div class="form-actions-bar" style="margin-top: 16px; display: flex; gap: 10px;">
+      <button class="button button-dark" type="submit">Record sale &amp; store in CRM ↗</button>
+      <button type="button" class="button button-outline" id="btn-cancel-sale">Cancel</button>
+    </div>
+  </form>
+</div>
 
-        <div class="customer-toggle-row">
-          <label class="radio-label">
-            <input type="radio" name="customer_type" value="existing" id="radio-cust-existing">
-            <span>Verify existing CRM customer</span>
-          </label>
-          <label class="radio-label">
-            <input type="radio" name="customer_type" value="new" id="radio-cust-new" checked>
-            <span>Register new customer in CRM</span>
-          </label>
-        </div>
-
-        <!-- Existing Customer Select -->
-        <div id="existing-customer-block" style="display: none; margin-top: 10px;">
-          <label style="display: grid; gap: 5px; font-size: 9px;">
-            <span>Choose customer from CRM book:</span>
-            <select name="existing_user_id" id="existing-user-select" style="height: 36px; padding: 0 8px; font-size: 10px;">
-              <option value="">Select a registered customer...</option>
-              {% for cust in all_customers %}
-                <option value="{{ cust.id }}" data-email="{{ cust.email }}" data-phone="{{ cust.phone }}" data-name="{{ cust.first_name }} {{ cust.last_name }}">
-                  {{ cust.first_name }} {{ cust.last_name }} — {{ cust.email }} {% if cust.phone %}({{ cust.phone }}){% endif %}
-                </option>
-              {% endfor %}
-            </select>
-          </label>
-        </div>
-
-        <!-- New Customer Fields -->
-        <div id="new-customer-block" class="product-editor-grid" style="margin-top: 10px;">
-          <label>
-            <span>First Name</span>
-            <input name="first_name" id="cust-first-name" placeholder="First name">
-          </label>
-          <label>
-            <span>Last Name</span>
-            <input name="last_name" id="cust-last-name" placeholder="Last name">
-          </label>
-          <label>
-            <span>Email Address</span>
-            <input name="email" id="cust-email" type="email" placeholder="customer@example.com">
-          </label>
-          <label>
-            <span>Phone Number</span>
-            <input name="phone" id="cust-phone" type="tel" placeholder="+1 555-0199">
-          </label>
-          <label class="active-toggle" style="grid-column: 1/-1;">
-            <input type="checkbox" name="marketing_opt_in" checked>
-            Marketing communications consent (opt-in)
-          </label>
-        </div>
-
-        <div class="crm-badge-note">
-          <span class="crm-check-icon">✓</span>
-          <span>Order amount, purchased product, and customer profile will be permanently updated in the CRM directory.</span>
-        </div>
+<!-- ==========================================================================
+     ANALYTICS ROW 1: SALES ACTIVITY & FORECAST + CHANNEL MIX DONUT
+     ========================================================================== -->
+<div class="sales-analytics-grid">
+  <!-- Chart 1: Sales Activity Over Time with Forecast Band -->
+  <div class="sales-card">
+    <div class="sales-card-header">
+      <div>
+        <h3 class="sales-card-title">Sales Activity &amp; Demand Forecast</h3>
+        <p class="sales-card-desc">Daily net revenue, transaction volume, and 7-day projected trajectory with 80% confidence range.</p>
       </div>
-
-      <!-- Action Buttons -->
-      <div class="form-actions-bar" style="margin-top: 16px;">
-        <button class="button button-dark" type="submit">Record sale & store in CRM ↗</button>
-        <button type="button" class="button button-outline" id="btn-cancel-sale">Cancel</button>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button type="button" onclick="const s = document.getElementById('forecast-strip'); s.style.display = (s.style.display === 'none' ? 'grid' : 'none');"
+                class="forecast-badge-pill" title="Toggle 7-day forecast projection view" style="cursor: pointer; border: 1px solid #d1d5db;">
+          <span>📈</span> Forecast: 7D Projection ▾
+        </button>
       </div>
-    </form>
+    </div>
+
+    <!-- Combined Revenue & Order Volume SVG Chart -->
+    <div style="width: 100%; height: 200px; position: relative;">
+      <svg viewBox="0 0 520 200" style="width: 100%; height: 100%; overflow: visible;" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="forecastGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#111827" stop-opacity="0.12"/>
+            <stop offset="100%" stop-color="#111827" stop-opacity="0.01"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Grid Lines -->
+        <line x1="30" y1="170" x2="510" y2="170" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="120" x2="510" y2="120" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="70" x2="510" y2="70" stroke="#f0f0f0" stroke-width="1"/>
+        <line x1="30" y1="20" x2="510" y2="20" stroke="#f0f0f0" stroke-width="1"/>
+
+        {% set n_days = timeline_days|length %}
+        {% set slot_w = 470 / (n_days if n_days > 0 else 1) %}
+
+        <!-- Order Volume Bars -->
+        {% for d in timeline_days %}
+          {% set x_pos = 35 + loop.index0 * slot_w + (slot_w * 0.2) %}
+          {% set bar_w = slot_w * 0.6 %}
+          {% set bar_h = (d.orders / (max_daily_orders or 1) * 110) if (max_daily_orders and max_daily_orders > 0) else 0 %}
+          {% set bar_y = 170 - bar_h %}
+          <rect x="{{ x_pos }}" y="{{ bar_y }}" width="{{ bar_w }}" height="{{ bar_h }}" fill="#f3f4f6" stroke="#e5e7eb" rx="2">
+            <title>{{ d.label }}: {{ d.orders }} orders (Rs {{ '%.2f'|format(d.revenue) }})</title>
+          </rect>
+          {% if loop.index0 % 4 == 0 or loop.last %}
+          <text x="{{ x_pos + bar_w / 2 }}" y="186" text-anchor="middle" font-size="9" fill="#9ca3af" font-family="inherit">{{ d.label }}</text>
+          {% endif %}
+        {% endfor %}
+
+        <!-- Prior Period Polyline (if compare active) -->
+        {% if compare %}
+          {% set prior_pts = [] %}
+          {% for d in timeline_days %}
+            {% set x_pt = 35 + loop.index0 * slot_w + (slot_w * 0.5) %}
+            {% set y_pt = 170 - ((d.prior_revenue / (max_daily_rev or 1) * 140) if (max_daily_rev and max_daily_rev > 0) else 0) %}
+            {% set _ = prior_pts.append(x_pt ~ ',' ~ y_pt) %}
+          {% endfor %}
+          <polyline fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-dasharray="4 4" stroke-linecap="round" points="{{ prior_pts|join(' ') }}"/>
+        {% endif %}
+
+        <!-- Current Period Revenue Polyline -->
+        {% set rev_points = [] %}
+        {% for d in timeline_days %}
+          {% set x_pt = 35 + loop.index0 * slot_w + (slot_w * 0.5) %}
+          {% set y_pt = 170 - ((d.revenue / (max_daily_rev or 1) * 140) if (max_daily_rev and max_daily_rev > 0) else 0) %}
+          {% set _ = rev_points.append(x_pt ~ ',' ~ y_pt) %}
+        {% endfor %}
+        <polyline fill="none" stroke="#111827" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" points="{{ rev_points|join(' ') }}"/>
+
+        {% for d in timeline_days %}
+          {% set x_pt = 35 + loop.index0 * slot_w + (slot_w * 0.5) %}
+          {% set y_pt = 170 - ((d.revenue / (max_daily_rev or 1) * 140) if (max_daily_rev and max_daily_rev > 0) else 0) %}
+          <circle cx="{{ x_pt }}" cy="{{ y_pt }}" r="3" fill="#ffffff" stroke="#111827" stroke-width="2">
+            <title>{{ d.label }}: Rs {{ '%.2f'|format(d.revenue) }} ({{ d.orders }} orders)</title>
+          </circle>
+        {% endfor %}
+      </svg>
+    </div>
+
+    <!-- Chart Legend Strip -->
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 10.5px; color: #6b7280;">
+      <div style="display: flex; gap: 14px;">
+        <span style="display: flex; align-items: center; gap: 5px;">
+          <span style="display: inline-block; width: 14px; height: 3px; background: #111827; border-radius: 2px;"></span> Net Revenue (Rs)
+        </span>
+        <span style="display: flex; align-items: center; gap: 5px;">
+          <span style="display: inline-block; width: 12px; height: 10px; background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 2px;"></span> Orders Volume
+        </span>
+        {% if compare %}
+        <span style="display: flex; align-items: center; gap: 5px;">
+          <span style="display: inline-block; width: 14px; height: 2px; border-top: 2px dashed #9ca3af;"></span> Prior Period
+        </span>
+        {% endif %}
+      </div>
+      <span style="color: #9ca3af; font-size: 10px;">Max Day: Rs {{ '%.2f'|format(max_daily_rev) }}</span>
+    </div>
+
+    <!-- 7-Day Forecast Projection Cards (Toggled) -->
+    <div id="forecast-strip" class="forecast-days-strip">
+      {% for f in forecast_days %}
+      <div class="forecast-day-card">
+        <small>{{ f.day }}</small>
+        <strong>Rs {{ '%.0f'|format(f.projected) }}</strong>
+        <span style="font-size: 8.5px; color: #9ca3af;">±Rs {{ '%.0f'|format(f.conf_upper - f.projected) }}</span>
+      </div>
+      {% endfor %}
+    </div>
   </div>
-</section>
 
-<!-- Product & Variant Performance Table with COGS & Gross Margins -->
-<section class="admin-section">
+  <!-- Chart 2: Channel Mix Donut & Promos -->
+  <div class="sales-card">
+    <div class="sales-card-header">
+      <div>
+        <h3 class="sales-card-title">Channel Mix &amp; Promos</h3>
+        <p class="sales-card-desc">Sales volume split between retail in-store and online fulfillment.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-around; gap: 16px; margin: 10px 0;">
+      <!-- Donut SVG Ring -->
+      <div style="width: 120px; height: 120px; position: relative; flex-shrink: 0;">
+        <svg viewBox="0 0 36 36" style="width: 100%; height: 100%; transform: rotate(-90deg);">
+          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#f3f4f6" stroke-width="4.5"/>
+          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#111827" stroke-width="4.5"
+                  stroke-dasharray="{{ store_pct }} 100" stroke-dashoffset="0"/>
+          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#4b5563" stroke-width="4.5"
+                  stroke-dasharray="{{ online_pct }} 100" stroke-dashoffset="-{{ store_pct }}"/>
+        </svg>
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <strong style="font-size: 15px; color: #111111;">{{ store_pct }}%</strong>
+          <span style="font-size: 9px; color: #6b7280;">In-store</span>
+        </div>
+      </div>
+
+      <!-- Channel Breakdown Legend -->
+      <div style="display: flex; flex-direction: column; gap: 8px; flex: 1;">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #111827;"></span>
+            <strong>🏪 In-store sales</strong>
+          </span>
+          <span>Rs {{ '%.2f'|format(store_revenue) }} <small style="color: #6b7280;">({{ store_orders_count }})</small></span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #4b5563;"></span>
+            <strong>🚚 Online delivery</strong>
+          </span>
+          <span>Rs {{ '%.2f'|format(online_revenue) }} <small style="color: #6b7280;">({{ online_orders_count }})</small></span>
+        </div>
+        {% if total_discounts > 0 %}
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10.5px; padding-top: 6px; border-top: 1px dashed #e5e7eb; color: #b91c1c;">
+          <span>🏷️ Campaign deductions</span>
+          <strong>-Rs {{ '%.2f'|format(total_discounts) }}</strong>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==========================================================================
+     ANALYTICS ROW 2: STOCK OUTLOOK WIDGET & ORDER FULFILLMENT STATUS
+     ========================================================================== -->
+<div class="sales-analytics-grid equal-cols">
+  <!-- Stock Outlook Widget (14-day demand forecast vs on-hand stock) -->
+  <div class="sales-card">
+    <div class="sales-card-header">
+      <div>
+        <h3 class="sales-card-title">Stock Outlook &amp; Demand Run-Rate</h3>
+        <p class="sales-card-desc">14-day forecasted garment demand vs warehouse inventory buffer.</p>
+      </div>
+      <div style="display: flex; gap: 5px;">
+        {% if stock_alert_counts.danger > 0 %}
+        <span class="stock-urgency-badge stock-urgency-danger">⚠️ {{ stock_alert_counts.danger }} Reorder</span>
+        {% endif %}
+        {% if stock_alert_counts.warning > 0 %}
+        <span class="stock-urgency-badge stock-urgency-warning">⏳ {{ stock_alert_counts.warning }} Watch</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="table-wrap" style="max-height: 240px; overflow-y: auto;">
+      <table class="stock-outlook-table">
+        <thead>
+          <tr>
+            <th>Product Garment</th>
+            <th>Daily Velocity</th>
+            <th>14D Forecast</th>
+            <th>On Hand</th>
+            <th>Outlook</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in stock_outlook[:6] %}
+          <tr>
+            <td>
+              <strong>{{ item.name }}</strong>
+              <small style="display: block; color: #6b7280; font-size: 9.5px;">{{ item.category }}</small>
+            </td>
+            <td>{{ item.velocity }} pcs/day</td>
+            <td><strong>{{ item.forecast_14d }} pcs</strong></td>
+            <td>{{ item.stock_quantity }} units</td>
+            <td>
+              <span class="stock-urgency-badge {% if item.severity == 'danger' %}stock-urgency-danger{% elif item.severity == 'warning' %}stock-urgency-warning{% else %}stock-urgency-ok{% endif %}">
+                {{ item.urgency }}
+              </span>
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="5" class="table-empty">Inventory tracking active. No critical stock deficits identified.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Order Status Mix Donut & Fulfillment Alerts -->
+  <div class="sales-card">
+    <div class="sales-card-header">
+      <div>
+        <h3 class="sales-card-title">Fulfillment Pipeline Mix</h3>
+        <p class="sales-card-desc">Current order distribution across fulfillment workflow stages.</p>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; justify-content: space-around; gap: 16px;">
+      <!-- Donut SVG Ring -->
+      <div style="width: 120px; height: 120px; position: relative; flex-shrink: 0;">
+        <svg viewBox="0 0 36 36" style="width: 100%; height: 100%; transform: rotate(-90deg);">
+          <circle cx="18" cy="18" r="15.915" fill="none" stroke="#f3f4f6" stroke-width="4.5"/>
+          {% for sm in status_mix %}
+          <circle cx="18" cy="18" r="15.915" fill="none" stroke="{{ sm.color }}" stroke-width="4.5"
+                  stroke-dasharray="{{ sm.dasharray }}" stroke-dashoffset="{{ sm.dashoffset }}"/>
+          {% endfor %}
+        </svg>
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+          <strong style="font-size: 15px; color: #111111;">{{ status_mix[0].pct }}%</strong>
+          <span style="font-size: 9px; color: #6b7280;">Completed</span>
+        </div>
+      </div>
+
+      <!-- Status Counts Legend -->
+      <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
+        {% for sm in status_mix %}
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px;">
+          <span style="display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: {{ sm.color }};"></span>
+            {{ sm.name }}
+          </span>
+          <span><strong>{{ sm.count }}</strong> <small style="color: #6b7280;">({{ sm.pct }}%)</small></span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if delayed_orders_count > 0 %}
+    <div class="delayed-alert-box">
+      <span>⚠️</span>
+      <span><strong>{{ delayed_orders_count }} order{{ 's' if delayed_orders_count != 1 else '' }}</strong> pending/processing &gt; 24h awaiting dispatch.</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ==========================================================================
+     MANUFACTURING & UNIT ECONOMICS: PRODUCT & VARIANT PERFORMANCE TABLE
+     ========================================================================== -->
+<section class="admin-section" style="margin-top: 10px;">
   <div class="admin-section-head">
     <div>
-      <p class="eyebrow">Manufacturing & Unit Economics</p>
-      <h2>Product & Variant Performance</h2>
+      <p class="eyebrow">Manufacturing &amp; Unit Economics</p>
+      <h2>Product &amp; Variant Performance</h2>
       <p class="report-note">Disaggregated performance tracking per garment style and size variant. Incorporates third-party manufacturing vendor COGS and gross margins.</p>
     </div>
-    <span class="product-count">{{ variant_sales|length }} variant{{ 's' if variant_sales|length != 1 else '' }} sold</span>
+    <span class="product-count">{{ variant_sales|length }} variant{{ 's' if variant_sales|length != 1 else '' }} tracked</span>
   </div>
+
+  <!-- Margin Threshold Control Bar -->
+  <div class="margin-control-bar">
+    <div class="threshold-slider-group">
+      <span>Alert Threshold:</span>
+      <div class="period-pills-group">
+        <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold=55.0"
+           class="period-pill-btn {% if margin_threshold == 55.0 %}active{% endif %}">&lt; 55%</a>
+        <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold=60.0"
+           class="period-pill-btn {% if margin_threshold == 60.0 %}active{% endif %}">&lt; 60%</a>
+        <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold=61.0"
+           class="period-pill-btn {% if margin_threshold == 61.0 %}active{% endif %}">&lt; 61% (Default)</a>
+        <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold=65.0"
+           class="period-pill-btn {% if margin_threshold == 65.0 %}active{% endif %}">&lt; 65%</a>
+      </div>
+    </div>
+
+    {% if below_margin_count > 0 %}
+    <span class="margin-pill-alert">
+      ⚠️ {{ below_margin_count }} variant{{ 's' if below_margin_count != 1 else '' }} below {{ margin_threshold }}% target margin
+    </span>
+    {% else %}
+    <span class="stock-urgency-badge stock-urgency-ok">
+      ✓ All variants meet {{ margin_threshold }}% margin target
+    </span>
+    {% endif %}
+  </div>
+
+  <!-- Variant Economics Table -->
   <div class="table-wrap">
     <table class="variant-performance-table">
       <thead>
@@ -264,7 +690,7 @@
       </thead>
       <tbody>
         {% for v in variant_sales %}
-        <tr>
+        <tr style="{% if v.is_below_margin %}background: #fffafa; border-left: 3px solid #dc2626;{% endif %}">
           <td class="customer-name">
             <strong>{{ v.product_name }}</strong>
             <small>{{ v.category }}</small>
@@ -278,9 +704,12 @@
           <td>Rs {{ '%.2f'|format(v.gross_revenue) }}</td>
           <td><strong style="color: #1b5e20;">+Rs {{ '%.2f'|format(v.gross_profit) }}</strong></td>
           <td>
-            <span class="margin-indicator {% if v.margin_pct >= 60 %}margin-high{% elif v.margin_pct >= 40 %}margin-mid{% else %}margin-low{% endif %}">
+            <span class="margin-indicator {% if v.margin_pct >= 65 %}margin-high{% elif v.margin_pct >= 55 %}margin-mid{% else %}margin-low{% endif %}">
               {{ '%.1f'|format(v.margin_pct) }}%
             </span>
+            {% if v.is_below_margin %}
+            <small style="display: block; color: #dc2626; font-size: 9px; font-weight: 600;">Low Margin</small>
+            {% endif %}
           </td>
         </tr>
         {% else %}
@@ -293,54 +722,168 @@
   </div>
 </section>
 
-<!-- MVP Best Seller Highlight (Preserved) -->
-{% if best_seller %}
-<section class="best-seller">
-  <p class="eyebrow">Most purchased · MVP</p>
-  <div>
-    <h2>{{ best_seller.name }}</h2>
-    <strong>{{ best_seller.units }} units sold</strong>
-  </div>
-  <span>Rs {{ '%.2f'|format(best_seller.revenue) }} revenue in this period</span>
-</section>
-{% endif %}
-
-<!-- Sales Activity Chart (Preserved) -->
+<!-- ==========================================================================
+     TOP PRODUCTS RANKING & PROFIT VS. VENDOR COGS DECOMPOSITION
+     ========================================================================== -->
 <section class="admin-section">
   <div class="admin-section-head">
     <div>
-      <p class="eyebrow">Revenue over time</p>
-      <h2>Sales activity</h2>
+      <p class="eyebrow">Product Economics &amp; Profitability</p>
+      <h2>Sales by Product &amp; Profit vs. Vendor COGS</h2>
+      <p class="report-note">Ranked by volume with direct split between vendor manufacturing cost and company gross profit.</p>
     </div>
   </div>
-  <div class="sales-chart">
-    {% for row in daily_sales %}
-      <div class="sales-bar">
-        <span>Rs {{ '%.2f'|format(row.amount) }}</span>
-        <i style="height:{{ (row.amount / max_daily * 100)|int if max_daily else 0 }}%"></i>
-        <small>{{ row.day }}</small>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Product</th>
+          <th>Units Sold</th>
+          <th>Revenue (Rs)</th>
+          <th style="min-width: 200px;">Revenue Split: Vendor COGS vs Gross Profit</th>
+          <th>Gross Profit (Rs)</th>
+          <th>Margin (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in product_sales %}
+        <tr>
+          <td class="customer-name">
+            <strong>{{ item.name }}</strong>
+            {% if item.is_mvp %}
+            <span class="badge-status status-active" style="background: #111111; color: #ffffff; font-size: 9px; margin-left: 6px;">★ MVP</span>
+            {% endif %}
+          </td>
+          <td><strong>{{ item.units }}</strong></td>
+          <td>Rs {{ '%.2f'|format(item.revenue) }}</td>
+          <td>
+            <div class="cogs-profit-bar" title="COGS: {{ item.cogs_pct }}% | Profit: {{ item.profit_pct }}%">
+              <div class="cogs-seg" style="width: {{ item.cogs_pct }}%;"></div>
+              <div class="profit-seg" style="width: {{ item.profit_pct }}%;"></div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #6b7280;">
+              <span>COGS: {{ item.cogs_pct }}%</span>
+              <span>Profit: {{ item.profit_pct }}%</span>
+            </div>
+          </td>
+          <td><strong style="color: #1b5e20;">+Rs {{ '%.2f'|format(item.profit) }}</strong></td>
+          <td>
+            <span class="margin-indicator {% if item.margin_pct >= 65 %}margin-high{% elif item.margin_pct >= 55 %}margin-mid{% else %}margin-low{% endif %}">
+              {{ '%.1f'|format(item.margin_pct) }}%
+            </span>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="table-empty">No product sales recorded in this period.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ==========================================================================
+     SALES BY AGENT & COMMISSION ATTRIBUTION WIDGET
+     ========================================================================== -->
+<section class="admin-section">
+  <div class="admin-section-head">
+    <div>
+      <p class="eyebrow">Partner &amp; Retail Network</p>
+      <h2>Sales Attribution by Agent</h2>
+      <p class="report-note">Performance distribution, monthly target attainment, and commission settlements across direct sales and network agents.</p>
+    </div>
+    <span class="product-count">{{ agent_performance|length }} sales channel{{ 's' if agent_performance|length != 1 else '' }}</span>
+  </div>
+
+  <div class="agent-perf-grid">
+    {% for ag in agent_performance %}
+    <div class="agent-perf-card">
+      <div>
+        <div class="agent-perf-header">
+          <div class="agent-avatar-circle">
+            {% if ag.profile_image %}
+            <img src="{{ ag.profile_image }}" alt="{{ ag.name }}">
+            {% else %}
+            <span>{{ ag.name[:2]|upper }}</span>
+            {% endif %}
+          </div>
+          <div>
+            <h4 class="agent-perf-name">{{ ag.name }}</h4>
+            <p class="agent-perf-role">{{ ag.orders_count }} orders completed</p>
+          </div>
+        </div>
+
+        <div style="margin: 8px 0;">
+          <div style="display: flex; justify-content: space-between; font-size: 11px;">
+            <span style="color: #6b7280;">Completed Sales:</span>
+            <strong>Rs {{ '%.2f'|format(ag.revenue) }}</strong>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-top: 4px;">
+            <span style="color: #6b7280;">Commission:</span>
+            <span>Rs {{ '%.2f'|format(ag.commission_earned) }} <small style="color: #059669;">(Rs {{ '%.2f'|format(ag.commission_settled) }} settled)</small></span>
+          </div>
+        </div>
       </div>
-    {% else %}
-      <p class="table-empty">No sales in this period.</p>
+
+      <div>
+        <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #6b7280; margin-top: 8px;">
+          <span>Target Attainment:</span>
+          <strong>{{ ag.target_pct }}%</strong>
+        </div>
+        <div class="agent-target-meter" title="Target: Rs {{ '%.2f'|format(ag.monthly_target) }}">
+          <div class="agent-target-fill" style="width: {{ [ag.target_pct, 100]|min }}%;"></div>
+        </div>
+      </div>
+    </div>
     {% endfor %}
   </div>
 </section>
 
-<!-- Comprehensive Transaction Ledger & Export -->
+<!-- ==========================================================================
+     COMPREHENSIVE FILTERABLE TRANSACTION LEDGER
+     ========================================================================== -->
 <section class="admin-section">
   <div class="admin-section-head">
     <div>
-      <p class="eyebrow">Accounting & Reconciliation</p>
+      <p class="eyebrow">Accounting &amp; Reconciliation</p>
       <h2>Transaction Ledger</h2>
-      <p class="report-note">Completed transactions, channel logs, customer accounts, and vendor fulfillment status.</p>
+      <p class="report-note">Completed transactions, customer CRM accounts, carrier tracking, and vendor fulfillment status.</p>
     </div>
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;agent_id={{ selected_agent }}" class="button button-outline button-sm">
+    <div style="display: flex; align-items: center; gap: 10px;">
+      <a href="{{ url_for('export_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;start_date={{ start_date }}&amp;end_date={{ end_date }}" class="button button-outline button-sm">
         ↓ Download CSV
       </a>
-      <span class="product-count">{{ orders|length }} transaction{{ 's' if orders|length != 1 else '' }}</span>
+      <span class="product-count">{{ ledger_orders|length }} transaction{{ 's' if ledger_orders|length != 1 else '' }}</span>
     </div>
   </div>
+
+  <!-- Search & Status Filter Strip -->
+  <div class="ledger-filter-strip">
+    <form method="get" action="{{ url_for('admin_sales') }}" style="display: flex; gap: 8px; flex: 1; max-width: 400px; margin: 0;">
+      <input type="hidden" name="period" value="{{ period }}">
+      <input type="hidden" name="channel" value="{{ selected_channel }}">
+      <input type="hidden" name="agent_id" value="{{ selected_agent }}">
+      <input type="hidden" name="compare" value="{{ 1 if compare else 0 }}">
+      <input type="hidden" name="margin_threshold" value="{{ margin_threshold }}">
+      <input type="hidden" name="ledger_status" value="{{ ledger_status }}">
+      <input type="text" name="ledger_search" value="{{ ledger_search }}" placeholder="Search by Order #, Customer, Batch ID..." class="ledger-search-input">
+      <button type="submit" class="button button-dark button-sm" style="height: 32px; padding: 0 10px;">Search</button>
+    </form>
+
+    <div class="period-pills-group">
+      <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}&amp;ledger_status=all"
+         class="period-pill-btn {% if ledger_status == 'all' %}active{% endif %}">All Statuses</a>
+      <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}&amp;ledger_status=Completed"
+         class="period-pill-btn {% if ledger_status == 'Completed' %}active{% endif %}">Completed</a>
+      <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}&amp;ledger_status=Processing"
+         class="period-pill-btn {% if ledger_status == 'Processing' %}active{% endif %}">Processing</a>
+      <a href="{{ url_for('admin_sales') }}?period={{ period }}&amp;channel={{ selected_channel }}&amp;agent_id={{ selected_agent }}&amp;compare={{ 1 if compare else 0 }}&amp;margin_threshold={{ margin_threshold }}&amp;ledger_status=Pending"
+         class="period-pill-btn {% if ledger_status == 'Pending' %}active{% endif %}">Pending</a>
+    </div>
+  </div>
+
   <div class="table-wrap">
     <table>
       <thead>
@@ -356,7 +899,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for order in orders %}
+        {% for order in ledger_orders %}
         <tr id="order-{{ order.id }}">
           <td><strong>#{{ '%04d'|format(order.id) }}</strong></td>
           <td>{{ order.created_at.strftime('%b %d, %Y · %H:%M') }}</td>
@@ -368,11 +911,16 @@
             {% endif %}
           </td>
           <td class="customer-name">
+            {% if order.user %}
             <a href="{{ url_for('admin_crm') }}#customer-{{ order.user_id }}" title="View customer in CRM" style="color: inherit; text-decoration: underline;">
               {{ order.user.first_name }} {{ order.user.last_name }} ↗
             </a>
             <small>{{ order.user.email }}{% if order.user.phone %} · {{ order.user.phone }}{% endif %}</small>
-            <small>Agent: {{ order.agent.name if order.agent else 'Direct sale' }}</small>
+            {% else %}
+            <span>{{ order.customer_name or 'Direct Customer' }}</span>
+            <small>{{ order.customer_phone }}</small>
+            {% endif %}
+            <small style="color: #6b7280;">Agent: {{ order.agent.name if order.agent else 'Direct sale' }}</small>
           </td>
           <td>
             {% for item in order.items %}
@@ -400,42 +948,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="8" class="table-empty">No transactions recorded in this period. Click “Record New Sale” above to log your first order.</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<!-- Aggregated Product Ranking (Preserved) -->
-<section class="admin-section">
-  <div class="admin-section-head">
-    <div>
-      <p class="eyebrow">What customers are buying</p>
-      <h2>Sales by product</h2>
-      <p class="report-note">Ranked by units in non-cancelled orders; revenue is shown separately. “MVP” means the most-purchased product in this period.</p>
-    </div>
-  </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th>Product</th>
-          <th>Units sold</th>
-          <th>Sales</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in product_sales %}
-        <tr>
-          <td class="customer-name">{{ item.name }}</td>
-          <td>{{ item.units }}</td>
-          <td>Rs {{ '%.2f'|format(item.revenue) }}</td>
-        </tr>
-        {% else %}
-        <tr>
-          <td colspan="3" class="table-empty">No recorded sales in this period.</td>
+          <td colspan="8" class="table-empty">No transactions found matching the selected criteria.</td>
         </tr>
         {% endfor %}
       </tbody>

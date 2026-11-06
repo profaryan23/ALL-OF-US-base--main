@@ -2952,33 +2952,145 @@ def admin_search(request: Request, _admin: Annotated[User, Depends(require_admin
                 module_label=module_label, module_endpoint=module_endpoint, admin_modules=ADMIN_MODULES)
 
 
+def make_sparkline(data_points, width=90, height=26):
+    if not data_points:
+        return f"0,{height // 2} {width},{height // 2}"
+    min_v = min(data_points)
+    max_v = max(data_points)
+    rng = max_v - min_v or 1.0
+    n = len(data_points)
+    step = width / max(1, n - 1)
+    pts = []
+    for i, v in enumerate(data_points):
+        x = round(i * step, 1)
+        y = round(height - 4 - ((float(v) - float(min_v)) / float(rng) * (height - 8)), 1)
+        pts.append(f"{x},{y}")
+    return " ".join(pts)
+
+
 @app.get("/admin/sales", name="admin_sales", response_class=HTMLResponse)
 def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)], db: Annotated[Session, Depends(get_db)]):
-    period = request.query_params.get("period", "30")
-    if period not in {"today", "7", "30", "90", "all"}:
-        period = "30"
+    period = request.query_params.get("period", "30").strip().lower()
+    start_date_str = request.query_params.get("start_date", "").strip()
+    end_date_str = request.query_params.get("end_date", "").strip()
+    selected_channel = request.query_params.get("channel", "all").strip()
+    selected_agent = request.query_params.get("agent_id", "").strip()
+    compare = request.query_params.get("compare", "0") in {"1", "true", "yes"}
+
+    try:
+        margin_threshold = Decimal(str(request.query_params.get("margin_threshold", "61.0")).strip())
+    except Exception:
+        margin_threshold = Decimal("61.0")
+
+    ledger_search = request.query_params.get("ledger_search", "").strip().lower()
+    ledger_status = request.query_params.get("ledger_status", "all").strip()
 
     now = datetime.utcnow()
+    since = None
+    until = None
+    prior_since = None
+    prior_until = None
+    period_days = 30
+
     if period == "today":
         since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        until = now
+        prior_since = since - timedelta(days=1)
+        prior_until = since
+        period_days = 1
     elif period == "7":
         since = now - timedelta(days=7)
+        until = now
+        prior_since = now - timedelta(days=14)
+        prior_until = since
+        period_days = 7
     elif period == "30":
         since = now - timedelta(days=30)
+        until = now
+        prior_since = now - timedelta(days=60)
+        prior_until = since
+        period_days = 30
     elif period == "90":
         since = now - timedelta(days=90)
-    else:
+        until = now
+        prior_since = now - timedelta(days=180)
+        prior_until = since
+        period_days = 90
+    elif period == "qtd":
+        qm = ((now.month - 1) // 3) * 3 + 1
+        since = datetime(now.year, qm, 1)
+        until = now
+        duration = until - since
+        prior_until = since
+        prior_since = max(datetime(now.year - 1, 1, 1), since - duration)
+        period_days = max(1, duration.days)
+    elif period == "ytd":
+        since = datetime(now.year, 1, 1)
+        until = now
+        duration = until - since
+        prior_until = datetime(now.year - 1, now.month, now.day) if now.year > 2000 else since
+        prior_since = datetime(now.year - 1, 1, 1)
+        period_days = max(1, duration.days)
+    elif period == "custom" and start_date_str and end_date_str:
+        try:
+            since = datetime.strptime(start_date_str, "%Y-%m-%d")
+            until = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            duration = until - since
+            prior_until = since
+            prior_since = since - duration
+            period_days = max(1, duration.days)
+        except Exception:
+            period = "30"
+            since = now - timedelta(days=30)
+            until = now
+            prior_since = now - timedelta(days=60)
+            prior_until = since
+            period_days = 30
+    elif period == "all":
         since = None
+        until = None
+        prior_since = None
+        prior_until = None
+        period_days = 90
+    else:
+        period = "30"
+        since = now - timedelta(days=30)
+        until = now
+        prior_since = now - timedelta(days=60)
+        prior_until = since
+        period_days = 30
 
-    orders_query = filter_agent_orders(db.query(Order).filter(Order.status != "Cancelled"), request)
-    if since:
-        orders_query = orders_query.filter(Order.created_at >= since)
-    orders = orders_query.order_by(Order.created_at.desc()).all()
+    # Base orders query (excluding cancelled for revenue/margin calculations)
+    base_orders_q = filter_agent_orders(db.query(Order).filter(Order.status != "Cancelled"), request)
+    base_items_q = filter_agent_orders(db.query(OrderItem).join(Order).filter(Order.status != "Cancelled"), request)
 
-    items_query = filter_agent_orders(db.query(OrderItem).join(Order).filter(Order.status != "Cancelled"), request)
+    if selected_channel in {"In-store", "Online delivery"}:
+        base_orders_q = base_orders_q.filter(Order.channel == selected_channel)
+        base_items_q = base_items_q.filter(Order.channel == selected_channel)
+
+    if selected_agent and selected_agent.isdigit():
+        ag_id = int(selected_agent)
+        base_orders_q = base_orders_q.filter(Order.agent_id == ag_id)
+        base_items_q = base_items_q.filter(Order.agent_id == ag_id)
+
+    curr_orders_q = base_orders_q
+    curr_items_q = base_items_q
     if since:
-        items_query = items_query.filter(Order.created_at >= since)
-    order_items = items_query.all()
+        curr_orders_q = curr_orders_q.filter(Order.created_at >= since)
+        curr_items_q = curr_items_q.filter(Order.created_at >= since)
+    if until:
+        curr_orders_q = curr_orders_q.filter(Order.created_at <= until)
+        curr_items_q = curr_items_q.filter(Order.created_at <= until)
+
+    orders = curr_orders_q.order_by(Order.created_at.desc()).all()
+    order_items = curr_items_q.all()
+
+    # Prior period queries (for comparison and growth % metrics)
+    prior_orders = []
+    prior_items = []
+    if prior_since and prior_until:
+        prior_orders = base_orders_q.filter(Order.created_at >= prior_since, Order.created_at <= prior_until).all()
+        prior_items = base_items_q.filter(Order.created_at >= prior_since, Order.created_at <= prior_until).all()
 
     # Product and Variant performance breakdown
     product_sales = {}
@@ -2992,8 +3104,7 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         line_rev = item.price_at_purchase * qty
         prod = item.product
 
-        # Product unit manufacturing vendor cost (COGS)
-        # If product COGS is set use it, otherwise benchmark at 38% of product standard price for direct manufacturing
+        # Unit COGS (if unset, standard benchmark 38% of list price)
         unit_cogs = prod.cogs if (getattr(prod, "cogs", None) and prod.cogs > 0) else (prod.price * Decimal("0.38"))
         line_cogs = unit_cogs * qty
 
@@ -3003,16 +3114,24 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
 
         # Product-level aggregation
         row = product_sales.setdefault(item.product_id, {
+            "id": prod.id,
             "name": prod.name,
+            "category": prod.category,
             "units": 0,
             "revenue": Decimal("0.00"),
             "cogs": Decimal("0.00"),
+            "profit": Decimal("0.00"),
+            "margin_pct": Decimal("0.0"),
+            "photo_path": getattr(prod, "photo_path", "") or "",
         })
         row["units"] += qty
         row["revenue"] += line_rev
         row["cogs"] += line_cogs
+        row["profit"] = row["revenue"] - row["cogs"]
+        if row["revenue"] > 0:
+            row["margin_pct"] = (row["profit"] / row["revenue"]) * Decimal("100.0")
 
-        # Variant-level breakdown (e.g. Grey Henley - Size L)
+        # Variant-level breakdown
         variant_key = f"{prod.id}::{item.size_variation or 'Standard'}::{item.color_variation}"
         vrow = variant_sales.setdefault(variant_key, {
             "product_id": prod.id,
@@ -3034,34 +3153,257 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
         if vrow["gross_revenue"] > 0:
             vrow["margin_pct"] = (vrow["gross_profit"] / vrow["gross_revenue"]) * Decimal("100.0")
 
-    daily_totals = {}
-    for order in orders:
-        day = order.created_at.strftime("%b %d")
-        daily_totals[day] = daily_totals.get(day, Decimal("0.00")) + order.total_amount
-    daily_sales = [{"day": day, "amount": amount} for day, amount in sorted(daily_totals.items())]
+    # Mark variants below margin threshold
+    below_margin_count = 0
+    for v in variant_sales.values():
+        v["is_below_margin"] = v["margin_pct"] < margin_threshold
+        if v["is_below_margin"]:
+            below_margin_count += 1
 
-    # Executive Financial KPIs
+    # Financial KPIs
     total_order_amount = sum((order.total_amount for order in orders), Decimal("0.00"))
     total_discounts = sum((getattr(order, "discount_amount", Decimal("0.00")) or Decimal("0.00") for order in orders), Decimal("0.00"))
-    # Net revenue post-discounts
     net_revenue = total_order_amount
     if gross_revenue < total_order_amount:
         gross_revenue = total_order_amount
     gross_profit = gross_revenue - total_cogs
     gross_margin_pct = (gross_profit / gross_revenue * Decimal("100.0")) if gross_revenue > 0 else Decimal("0.0")
     aov = (net_revenue / len(orders)) if orders else Decimal("0.00")
+    target_margin_pct = Decimal("65.0")
 
-    best_seller = max(product_sales.values(), key=lambda item: (item["units"], item["revenue"]), default=None)
+    # Growth calculations vs prior period
+    prior_gross_rev = sum((item.price_at_purchase * item.quantity for item in prior_items), Decimal("0.00"))
+    prior_net_rev = sum((o.total_amount for o in prior_orders), Decimal("0.00"))
+    prior_units = sum((item.quantity for item in prior_items), 0)
+    prior_aov = (prior_net_rev / len(prior_orders)) if prior_orders else Decimal("0.00")
 
-    # Sales Channels Breakdown (Store vs Online delivery)
+    def calc_growth(curr, prior):
+        if prior and prior > 0:
+            return round(float((curr - prior) / prior * 100), 1)
+        return 100.0 if curr > 0 else 0.0
+
+    gross_rev_growth = calc_growth(gross_revenue, prior_gross_rev)
+    net_rev_growth = calc_growth(net_revenue, prior_net_rev)
+    units_growth = calc_growth(total_units_sold, prior_units)
+    aov_growth = calc_growth(aov, prior_aov)
+
+    # Daily aggregation & timeline points
+    daily_totals = {}
+    daily_orders_map = {}
+    for order in orders:
+        day_key = order.created_at.strftime("%Y-%m-%d")
+        daily_totals[day_key] = daily_totals.get(day_key, Decimal("0.00")) + order.total_amount
+        daily_orders_map[day_key] = daily_orders_map.get(day_key, 0) + 1
+
+    prior_daily_totals = {}
+    for order in prior_orders:
+        day_key = order.created_at.strftime("%Y-%m-%d")
+        prior_daily_totals[day_key] = prior_daily_totals.get(day_key, Decimal("0.00")) + order.total_amount
+
+    chart_days = min(period_days, 30)
+    timeline_days = []
+    anchor_since = since or (now - timedelta(days=chart_days))
+    for i in range(chart_days):
+        day_dt = anchor_since + timedelta(days=i)
+        d = day_dt.strftime("%Y-%m-%d")
+        label = day_dt.strftime("%b %d")
+        rev = daily_totals.get(d, Decimal("0.00"))
+        ord_c = daily_orders_map.get(d, 0)
+        prior_dt = anchor_since - timedelta(days=chart_days) + timedelta(days=i)
+        prior_d = prior_dt.strftime("%Y-%m-%d")
+        prior_rev = prior_daily_totals.get(prior_d, Decimal("0.00"))
+        timeline_days.append({
+            "date": d,
+            "label": label,
+            "revenue": float(rev),
+            "orders": ord_c,
+            "prior_revenue": float(prior_rev),
+        })
+
+    max_daily_rev = max([d["revenue"] for d in timeline_days] + [100.0])
+    max_daily_orders = max([d["orders"] for d in timeline_days] + [1])
+
+    # Sparklines
+    rev_samples = [d["revenue"] for d in timeline_days] or [0]
+    order_samples = [d["orders"] for d in timeline_days] or [0]
+    gross_sparkline = make_sparkline(rev_samples)
+    net_sparkline = make_sparkline(rev_samples)
+    units_sparkline = make_sparkline(order_samples)
+    aov_samples = [(r / max(1, o)) for r, o in zip(rev_samples, order_samples)]
+    aov_sparkline = make_sparkline(aov_samples)
+
+    # 7-day Forward Forecast Projection (80% confidence interval band)
+    avg_daily_rev = float(net_revenue) / max(1, period_days)
+    forecast_days = []
+    forecast_total_7d = Decimal(str(round(avg_daily_rev * 7, 2)))
+    for i in range(1, 8):
+        f_date = (now + timedelta(days=i)).strftime("%b %d")
+        projected = round(avg_daily_rev, 2)
+        conf_upper = round(avg_daily_rev * 1.25, 2)
+        conf_lower = round(max(0.0, avg_daily_rev * 0.75), 2)
+        forecast_days.append({
+            "day": f_date,
+            "projected": projected,
+            "conf_upper": conf_upper,
+            "conf_lower": conf_lower,
+        })
+
+    # Sales Channels Breakdown
     store_orders = [o for o in orders if getattr(o, "channel", "Online delivery") == "In-store"]
     online_orders = [o for o in orders if getattr(o, "channel", "Online delivery") != "In-store"]
     store_revenue = sum((o.total_amount for o in store_orders), Decimal("0.00"))
     online_revenue = sum((o.total_amount for o in online_orders), Decimal("0.00"))
+    tot_channel_rev = store_revenue + online_revenue or Decimal("1.00")
+    store_pct = round(float(store_revenue / tot_channel_rev * 100), 1)
+    online_pct = round(float(online_revenue / tot_channel_rev * 100), 1)
+
+    # Stock Outlook Widget (14-day forecasted demand vs. on-hand stock)
+    all_products = db.query(Product).order_by(Product.name).all()
+    stock_outlook = []
+    stock_alert_counts = {"danger": 0, "warning": 0, "ok": 0}
+    for prod in all_products:
+        p_sold = product_sales.get(prod.id, {}).get("units", 0)
+        daily_velocity = p_sold / max(1, period_days)
+        forecast_14d = round(daily_velocity * 14, 1)
+        on_hand = prod.stock_quantity
+        if forecast_14d > 0 and on_hand <= int(forecast_14d):
+            urgency = "Reorder now"
+            severity = "danger"
+            stock_alert_counts["danger"] += 1
+        elif forecast_14d > 0 and on_hand <= int(forecast_14d * 2):
+            urgency = "Watch"
+            severity = "warning"
+            stock_alert_counts["warning"] += 1
+        else:
+            urgency = "Healthy"
+            severity = "ok"
+            stock_alert_counts["ok"] += 1
+
+        stock_outlook.append({
+            "product_id": prod.id,
+            "name": prod.name,
+            "category": prod.category,
+            "photo_path": prod.photo_path,
+            "price": prod.price,
+            "cogs": prod.cogs if (getattr(prod, "cogs", None) and prod.cogs > 0) else (prod.price * Decimal("0.38")),
+            "stock_quantity": on_hand,
+            "velocity": round(daily_velocity, 2),
+            "forecast_14d": forecast_14d,
+            "urgency": urgency,
+            "severity": severity,
+        })
+
+    stock_outlook.sort(key=lambda x: (0 if x["severity"] == "danger" else (1 if x["severity"] == "warning" else 2), x["stock_quantity"]))
+
+    # Product Sales ranking with MVP tag & COGS vs Profit split
+    ranked_products = sorted(
+        product_sales.values(),
+        key=lambda item: (item["units"], item["revenue"]),
+        reverse=True,
+    )
+    for idx, p in enumerate(ranked_products):
+        p["is_mvp"] = (idx == 0 and p["units"] > 0)
+        p_rev = float(p["revenue"]) or 1.0
+        p["cogs_pct"] = round(float(p["cogs"]) / p_rev * 100, 1)
+        p["profit_pct"] = round(float(p["profit"]) / p_rev * 100, 1)
+
+    best_seller = ranked_products[0] if ranked_products else None
+
+    # Fulfillment Status breakdown (Completed, Processing, Pending, Cancelled)
+    all_scoped_orders_q = filter_agent_orders(db.query(Order), request)
+    if selected_channel in {"In-store", "Online delivery"}:
+        all_scoped_orders_q = all_scoped_orders_q.filter(Order.channel == selected_channel)
+    if selected_agent and selected_agent.isdigit():
+        all_scoped_orders_q = all_scoped_orders_q.filter(Order.agent_id == int(selected_agent))
+    if since:
+        all_scoped_orders_q = all_scoped_orders_q.filter(Order.created_at >= since)
+    if until:
+        all_scoped_orders_q = all_scoped_orders_q.filter(Order.created_at <= until)
+    all_period_orders = all_scoped_orders_q.all()
+
+    status_counts = {"Completed": 0, "Processing": 0, "Pending": 0, "Cancelled": 0}
+    for o in all_period_orders:
+        st = o.status if o.status in status_counts else "Pending"
+        status_counts[st] += 1
+
+    tot_all_orders = len(all_period_orders) or 1
+    status_mix = [
+        {"name": "Completed", "count": status_counts["Completed"], "pct": round(status_counts["Completed"] / tot_all_orders * 100), "color": "#111827"},
+        {"name": "Processing", "count": status_counts["Processing"], "pct": round(status_counts["Processing"] / tot_all_orders * 100), "color": "#4b5563"},
+        {"name": "Pending", "count": status_counts["Pending"], "pct": round(status_counts["Pending"] / tot_all_orders * 100), "color": "#9ca3af"},
+        {"name": "Cancelled", "count": status_counts["Cancelled"], "pct": round(status_counts["Cancelled"] / tot_all_orders * 100), "color": "#e5e7eb"},
+    ]
+    accum_dash = 0
+    for sm in status_mix:
+        sm["dasharray"] = f"{sm['pct']} 100"
+        sm["dashoffset"] = f"-{accum_dash}"
+        accum_dash += sm["pct"]
+
+    delayed_orders_count = sum(
+        1 for o in all_period_orders
+        if o.status in {"Pending", "Processing"} and o.created_at and (now - o.created_at).total_seconds() > 86400
+    )
+
+    # Sales by Agent Widget
+    all_agents = db.query(Agent).order_by(Agent.name).all()
+    agent_perf_list = []
+    
+    # Direct sales entry
+    direct_orders = [o for o in orders if not o.agent_id]
+    direct_rev = sum((o.total_amount for o in direct_orders), Decimal("0.00"))
+    agent_perf_list.append({
+        "id": "direct",
+        "name": "Direct Storefront & Walk-in",
+        "profile_image": "",
+        "orders_count": len(direct_orders),
+        "revenue": direct_rev,
+        "commission_earned": Decimal("0.00"),
+        "commission_settled": Decimal("0.00"),
+        "commission_pending": Decimal("0.00"),
+        "monthly_target": Decimal("100000.00"),
+        "target_pct": round(float(direct_rev / Decimal("100000.00") * 100), 1),
+    })
+
+    for ag in all_agents:
+        ag_orders = [o for o in orders if o.agent_id == ag.id]
+        ag_rev = sum((o.total_amount for o in ag_orders), Decimal("0.00"))
+        ag_items = [it for o in ag_orders for it in o.items]
+        earned = sum((it.commission_amount for it in ag_items if it.order.status == "Completed"), Decimal("0.00"))
+        settled = sum((it.commission_amount for it in ag_items if it.order.status == "Completed" and it.is_commission_settled), Decimal("0.00"))
+        pending = earned - settled
+        target = ag.monthly_target or Decimal("50000.00")
+        target_pct = round(float(ag_rev / target * 100), 1) if target > 0 else 0.0
+        agent_perf_list.append({
+            "id": ag.id,
+            "name": ag.name,
+            "profile_image": ag.profile_image,
+            "orders_count": len(ag_orders),
+            "revenue": ag_rev,
+            "commission_earned": earned,
+            "commission_settled": settled,
+            "commission_pending": pending,
+            "monthly_target": target,
+            "target_pct": target_pct,
+        })
+
+    # Transaction Ledger filter & search
+    ledger_orders = orders
+    if ledger_status != "all":
+        ledger_orders = [o for o in ledger_orders if o.status == ledger_status]
+    if ledger_search:
+        ledger_orders = [
+            o for o in ledger_orders
+            if ledger_search in f"#{o.id:04d}".lower()
+            or (o.customer_name and ledger_search in o.customer_name.lower())
+            or (o.user and (ledger_search in o.user.first_name.lower() or ledger_search in o.user.last_name.lower() or ledger_search in o.user.email.lower()))
+            or (o.tracking_number and ledger_search in o.tracking_number.lower())
+            or (o.vendor_batch_id and ledger_search in o.vendor_batch_id.lower())
+        ]
 
     # Active catalog items & CRM customers for sales entry
-    all_products = db.query(Product).order_by(Product.name).all()
     all_customers = db.query(User).filter_by(role="customer").order_by(User.first_name, User.last_name).all()
+    allocations = db.query(AgentAllocation).filter(AgentAllocation.remaining > 0).all()
+    agent_commission = sum((item.commission_amount for item in order_items if item.order.status == "Completed"), Decimal("0.00"))
 
     sorted_variants = sorted(
         variant_sales.values(),
@@ -3070,25 +3412,60 @@ def admin_sales(request: Request, _admin: Annotated[User, Depends(require_admin)
     )
 
     return page(
-        request, "admin_sales.html", period=period, orders=orders, revenue=net_revenue,
-        gross_revenue=gross_revenue, net_revenue=net_revenue,
-        total_units_sold=total_units_sold, total_cogs=total_cogs,
-        gross_profit=gross_profit, gross_margin_pct=gross_margin_pct,
+        request, "admin_sales.html",
+        period=period,
+        start_date=start_date_str,
+        end_date=end_date_str,
+        selected_channel=selected_channel,
+        selected_agent=selected_agent,
+        compare=compare,
+        order_count=len(orders),
+        gross_revenue=gross_revenue,
+        gross_rev_growth=gross_rev_growth,
+        gross_sparkline=gross_sparkline,
+        net_revenue=net_revenue,
+        net_rev_growth=net_rev_growth,
+        net_sparkline=net_sparkline,
+        total_units_sold=total_units_sold,
+        units_growth=units_growth,
+        units_sparkline=units_sparkline,
+        average_order=aov,
+        aov_growth=aov_growth,
+        aov_sparkline=aov_sparkline,
+        total_cogs=total_cogs,
+        gross_profit=gross_profit,
+        gross_margin_pct=gross_margin_pct,
+        target_margin_pct=target_margin_pct,
         total_discounts=total_discounts,
-        order_count=len(orders), average_order=aov,
+        timeline_days=timeline_days,
+        max_daily_rev=max_daily_rev,
+        max_daily_orders=max_daily_orders,
+        forecast_days=forecast_days,
+        forecast_total_7d=forecast_total_7d,
+        store_revenue=store_revenue,
+        online_revenue=online_revenue,
+        store_orders_count=len(store_orders),
+        online_orders_count=len(online_orders),
+        store_pct=store_pct,
+        online_pct=online_pct,
+        stock_outlook=stock_outlook,
+        stock_alert_counts=stock_alert_counts,
         variant_sales=sorted_variants,
-        product_sales=sorted(
-            product_sales.values(),
-            key=lambda item: (item["units"], item["revenue"]),
-            reverse=True,
-        ),
+        margin_threshold=margin_threshold,
+        below_margin_count=below_margin_count,
+        product_sales=ranked_products,
         best_seller=best_seller,
-        daily_sales=daily_sales, max_daily=max((row["amount"] for row in daily_sales), default=Decimal("0.00")),
-        store_revenue=store_revenue, online_revenue=online_revenue,
-        store_orders_count=len(store_orders), online_orders_count=len(online_orders),
-        all_products=all_products, all_customers=all_customers,
-        allocations=db.query(AgentAllocation).filter(AgentAllocation.remaining > 0).all(),
-        agent_commission=sum((item.commission_amount for item in order_items if item.order.status == "Completed"), Decimal("0.00")),
+        status_mix=status_mix,
+        delayed_orders_count=delayed_orders_count,
+        agent_performance=agent_perf_list,
+        ledger_orders=ledger_orders,
+        ledger_search=ledger_search,
+        ledger_status=ledger_status,
+        all_products=all_products,
+        all_customers=all_customers,
+        allocations=allocations,
+        agents=all_agents,
+        agent_commission=agent_commission,
     )
 
 
@@ -3098,9 +3475,16 @@ def export_sales(
     _admin: Annotated[User, Depends(require_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
-    period = request.query_params.get("period", "all")
+    period = request.query_params.get("period", "all").strip().lower()
+    start_date_str = request.query_params.get("start_date", "").strip()
+    end_date_str = request.query_params.get("end_date", "").strip()
+    selected_channel = request.query_params.get("channel", "all").strip()
+    selected_agent = request.query_params.get("agent_id", "").strip()
+
     now = datetime.utcnow()
     since = None
+    until = None
+
     if period == "today":
         since = now.replace(hour=0, minute=0, second=0, microsecond=0)
     elif period == "7":
@@ -3109,10 +3493,27 @@ def export_sales(
         since = now - timedelta(days=30)
     elif period == "90":
         since = now - timedelta(days=90)
+    elif period == "qtd":
+        qm = ((now.month - 1) // 3) * 3 + 1
+        since = datetime(now.year, qm, 1)
+    elif period == "ytd":
+        since = datetime(now.year, 1, 1)
+    elif period == "custom" and start_date_str and end_date_str:
+        try:
+            since = datetime.strptime(start_date_str, "%Y-%m-%d")
+            until = datetime.strptime(end_date_str, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+        except Exception:
+            pass
 
     orders_query = filter_agent_orders(db.query(Order).order_by(Order.created_at.desc()), request)
+    if selected_channel in {"In-store", "Online delivery"}:
+        orders_query = orders_query.filter(Order.channel == selected_channel)
+    if selected_agent and selected_agent.isdigit():
+        orders_query = orders_query.filter(Order.agent_id == int(selected_agent))
     if since:
         orders_query = orders_query.filter(Order.created_at >= since)
+    if until:
+        orders_query = orders_query.filter(Order.created_at <= until)
     orders = orders_query.all()
 
     output = io.StringIO(newline="")
@@ -3131,11 +3532,16 @@ def export_sales(
         "Total Revenue (Rs)",
         "Estimated COGS (Rs)",
         "Gross Profit (Rs)",
+        "Gross Margin (%)",
         "Carrier",
         "Tracking Number",
         "Vendor Batch ID",
         "Gateway Ref",
-        "Agent", "Agent Acquisition Cost (Rs)", "Company Discount (%)", "Agent Commission (%)", "Agent Commission (Rs)",
+        "Agent",
+        "Agent Acquisition Cost (Rs)",
+        "Company Discount (%)",
+        "Agent Commission (%)",
+        "Agent Commission (Rs)",
     ])
 
     for o in orders:
@@ -3144,15 +3550,16 @@ def export_sales(
         for it in o.items:
             unit_c = it.product.cogs if (getattr(it.product, "cogs", None) and it.product.cogs > 0) else (it.product.price * Decimal("0.38"))
             cogs += unit_c * it.quantity
-            var_label = f" ({it.size_variation} / {it.color_variation})"
+            var_label = f" ({it.size_variation} / {it.color_variation})" if (it.size_variation or it.color_variation) else ""
             item_descs.append(f"{it.quantity}x {it.product.name}{var_label}")
 
-        cust_name = f"{o.user.first_name} {o.user.last_name}" if o.user else "Direct Customer"
+        cust_name = f"{o.user.first_name} {o.user.last_name}" if o.user else (o.customer_name or "Direct Customer")
         cust_email = o.user.email if o.user else ""
         discounts = getattr(o, "discount_amount", Decimal("0.00")) or Decimal("0.00")
         tax = getattr(o, "tax_amount", Decimal("0.00")) or Decimal("0.00")
         subtotal = o.total_amount + discounts - tax
         profit = o.total_amount - cogs
+        margin_pct = (profit / o.total_amount * Decimal("100.0")) if o.total_amount > 0 else Decimal("0.0")
 
         writer.writerow([
             f"#{o.id:04d}",
@@ -3168,6 +3575,7 @@ def export_sales(
             f"{o.total_amount:.2f}",
             f"{cogs:.2f}",
             f"{profit:.2f}",
+            f"{margin_pct:.1f}%",
             getattr(o, "carrier", "") or "",
             getattr(o, "tracking_number", "") or "",
             getattr(o, "vendor_batch_id", "") or "",

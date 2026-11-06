@@ -3262,3 +3262,559 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
   line-height: 1.5;
   margin-top: 14px;
 }
+
+/* ==========================================================================
+   SALES MANAGEMENT ENHANCED MODULE & FINANCIAL ANALYTICS
+   ========================================================================== */
+
+/* Top Controls & Filter Bar */
+.sales-top-ctrls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+
+.sales-filter-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sales-select-filter {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111111;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sales-select-filter:focus {
+  outline: none;
+  border-color: #111111;
+}
+
+.compare-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #e5e5e5;
+  background: #ffffff;
+  color: #4b5563;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.compare-toggle-pill:hover {
+  background: #f3f4f6;
+  color: #111111;
+}
+
+.compare-toggle-pill.active {
+  background: #111111;
+  color: #ffffff;
+  border-color: #111111;
+}
+
+.order-count-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  background: #f3f4f6;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.sales-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sales-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.sales-action-btn.btn-dark {
+  background: #111111;
+  color: #ffffff;
+  border: 1px solid #111111;
+}
+
+.sales-action-btn.btn-dark:hover {
+  background: #2b2b2b;
+}
+
+.sales-action-btn.btn-outline {
+  background: #ffffff;
+  color: #111111;
+  border: 1px solid #d1d5db;
+}
+
+.sales-action-btn.btn-outline:hover {
+  background: #f9fafb;
+}
+
+/* Custom Date Pickers Box */
+.custom-date-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.custom-date-input {
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 10.5px;
+}
+
+/* 5 KPI Metric Cards Grid */
+.sales-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.sales-kpi-card {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 120px;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.sales-kpi-card:hover {
+  border-color: #d1d5db;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.sales-kpi-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sales-kpi-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.sales-kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #111111;
+  margin: 6px 0 2px 0;
+  letter-spacing: -0.02em;
+}
+
+.sales-kpi-subtext {
+  font-size: 10px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.sales-sparkline-svg {
+  width: 90px;
+  height: 24px;
+  overflow: visible;
+}
+
+/* Target Margin Mini Progress Bar */
+.target-margin-bar {
+  width: 100%;
+  height: 5px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  margin-top: 6px;
+  overflow: hidden;
+  position: relative;
+}
+
+.target-margin-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #111111;
+}
+
+/* Analytics Row Grid (2 Column & 1 Column layouts) */
+.sales-analytics-grid {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.sales-analytics-grid.equal-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sales-card {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sales-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.sales-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111111;
+  margin: 0;
+}
+
+.sales-card-desc {
+  font-size: 11px;
+  color: #6b7280;
+  margin: 3px 0 0 0;
+}
+
+/* Forecast Toggle & Confidence Band */
+.forecast-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.forecast-days-strip {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.forecast-day-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 6px 4px;
+  text-align: center;
+}
+
+.forecast-day-card strong {
+  display: block;
+  font-size: 11px;
+  color: #111111;
+}
+
+.forecast-day-card small {
+  font-size: 9px;
+  color: #6b7280;
+}
+
+/* Stock Outlook Table */
+.stock-outlook-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.stock-outlook-table th {
+  text-align: left;
+  padding: 8px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.stock-outlook-table td {
+  padding: 10px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #111111;
+  vertical-align: middle;
+}
+
+.stock-urgency-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.stock-urgency-danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.stock-urgency-warning {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.stock-urgency-ok {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+/* Delayed orders alert banner */
+.delayed-alert-box {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #d97706;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 11px;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+/* Margin Alert & Threshold Controls */
+.margin-control-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f9fafb;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  margin-bottom: 14px;
+}
+
+.threshold-slider-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.margin-pill-alert {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Revenue Split Bar (COGS vs Profit) */
+.cogs-profit-bar {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #f3f4f6;
+  margin: 6px 0;
+}
+
+.cogs-seg {
+  height: 100%;
+  background: #4b5563;
+  transition: width 0.3s ease;
+}
+
+.profit-seg {
+  height: 100%;
+  background: #111827;
+  transition: width 0.3s ease;
+}
+
+/* Agent Performance Scorecard Grid */
+.agent-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.agent-perf-card {
+  background: #ffffff;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.agent-perf-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.agent-avatar-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #111111;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.agent-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.agent-perf-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #111111;
+  margin: 0;
+}
+
+.agent-perf-role {
+  font-size: 10px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.agent-target-meter {
+  width: 100%;
+  height: 5px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  margin-top: 6px;
+  overflow: hidden;
+}
+
+.agent-target-fill {
+  height: 100%;
+  background: #111111;
+  border-radius: 999px;
+}
+
+/* Transaction Ledger Search & Filter Strip */
+.ledger-filter-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ledger-search-input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e5e5e5;
+  border-radius: 6px;
+  font-size: 11px;
+  min-width: 220px;
+}
+
+.ledger-search-input:focus {
+  outline: none;
+  border-color: #111111;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1100px) {
+  .sales-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .sales-analytics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .sales-kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .sales-analytics-grid.equal-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .sales-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  .sales-top-ctrls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
