@@ -4,9 +4,10 @@
 
 {% block module_content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='crm.css') }}">
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
-<div class="crm-container">
+<div class="crm-container" x-data="{ showAddModal: false }">
 
   <!-- ========================================================================
        TOP CONTROL & TIME-WINDOW FILTER BAR
@@ -29,6 +30,9 @@
     </div>
 
     <div class="crm-top-actions">
+      <button type="button" class="crm-btn-primary" @click="showAddModal = true" onclick="window.crmOpenAddCustomerModal && window.crmOpenAddCustomerModal()" id="crm-open-add-customer-btn">
+        + Add Customer
+      </button>
       <button type="button" class="crm-btn-secondary" onclick="window.crmToggleCompare()" id="crm-compare-trigger-btn">
         ⇄ Compare Segments
       </button>
@@ -490,6 +494,80 @@
       <!-- Populated dynamically via crmOpenCustomerDetail -->
     </div>
   </aside>
+
+  <!-- ========================================================================
+       + ADD CUSTOMER MODAL (Alpine.js x-data="{ showAddModal: false }")
+       ======================================================================== -->
+  <div class="crm-modal-backdrop" id="crm-add-customer-modal"
+       x-show="showAddModal"
+       x-cloak
+       @keydown.escape.window="showAddModal = false"
+       :class="{ 'open': showAddModal }">
+    <div class="crm-modal" style="width: min(520px, 94vw);" @click.outside="showAddModal = false">
+      <div class="crm-modal-head">
+        <div>
+          <h2 style="margin: 0; font-size: 15px; font-weight: 700; letter-spacing: -0.01em;">+ Add New Customer</h2>
+          <p style="margin: 3px 0 0; font-size: 11px; color: var(--crm-ink-muted);">Register a new client record into the CRM and community ledger.</p>
+        </div>
+        <button type="button" class="crm-panel-close" @click="showAddModal = false" onclick="window.crmCloseAddCustomerModal && window.crmCloseAddCustomerModal()">✕</button>
+      </div>
+
+      <form method="post" action="{{ url_for('add_customer_view') }}" id="crm-add-customer-form" class="crm-add-form" onsubmit="return window.crmHandleAddCustomerSubmit(event)">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="crm-modal-body" style="grid-template-columns: 1fr; gap: 14px; padding: 18px 22px;">
+          <!-- Two columns for First & Last Name -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div>
+              <label for="crm-add-first-name" style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--crm-ink);">First Name <span style="color: #dc2626;">*</span></label>
+              <input type="text" id="crm-add-first-name" name="first_name" required placeholder="e.g. Aarav" style="width: 100%; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+            </div>
+            <div>
+              <label for="crm-add-last-name" style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--crm-ink);">Last Name <span style="color: #dc2626;">*</span></label>
+              <input type="text" id="crm-add-last-name" name="last_name" required placeholder="e.g. Sharma" style="width: 100%; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+            </div>
+          </div>
+
+          <!-- Email Field -->
+          <div>
+            <label for="crm-add-email" style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--crm-ink);">Email Address <span style="color: #dc2626;">*</span></label>
+            <input type="email" id="crm-add-email" name="email" required placeholder="aarav.sharma@example.com" style="width: 100%; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+          </div>
+
+          <!-- Phone Field -->
+          <div>
+            <label for="crm-add-phone" style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--crm-ink);">Phone Number <span style="color: var(--crm-ink-muted); font-weight: 400;">(Optional)</span></label>
+            <input type="tel" id="crm-add-phone" name="phone" placeholder="+977 9801234567" style="width: 100%; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 4px; font-size: 12px; box-sizing: border-box;">
+          </div>
+
+          <!-- Acquisition Channel Field -->
+          <div>
+            <label for="crm-add-channel" style="display: block; font-size: 11px; font-weight: 600; margin-bottom: 4px; color: var(--crm-ink);">Acquisition Channel</label>
+            <select id="crm-add-channel" name="channel" style="width: 100%; padding: 8px 10px; border: 1px solid var(--crm-line); border-radius: 4px; font-size: 12px; background: #fff; box-sizing: border-box;">
+              <option value="Direct Web" selected>Direct Web</option>
+              <option value="Guest Checkout">Guest Checkout</option>
+              <option value="Store Agent Portal">Store Agent Portal</option>
+            </select>
+          </div>
+
+          <!-- Marketing Consent Checkbox -->
+          <div style="background: #faf9f5; border: 1px solid var(--crm-line); border-radius: 4px; padding: 10px 12px; margin-top: 2px;">
+            <label style="display: flex; align-items: flex-start; gap: 8px; cursor: pointer; font-size: 11.5px; color: var(--crm-ink); margin: 0;">
+              <input type="checkbox" id="crm-add-marketing-consent" name="marketing_consent" value="on" checked style="margin-top: 2px; accent-color: #111;">
+              <div>
+                <strong style="display: block; font-weight: 600;">Marketing & Email Bulletins Consent</strong>
+                <span style="font-size: 10.5px; color: var(--crm-ink-muted); display: block; margin-top: 1px;">Customer consents to receiving studio drop announcements, seasonal lookbooks, and VIP digest emails.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="crm-modal-footer" style="padding: 12px 22px; border-top: 1px solid var(--crm-line); display: flex; justify-content: flex-end; gap: 8px; background: #fdfcf9;">
+          <button type="button" class="crm-btn-secondary" @click="showAddModal = false" onclick="window.crmCloseAddCustomerModal && window.crmCloseAddCustomerModal()">Cancel</button>
+          <button type="submit" class="crm-btn-primary" id="crm-submit-add-customer-btn">Save Customer</button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- ========================================================================
        C. SMART SEGMENT BUILDER MODAL

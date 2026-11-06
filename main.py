@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import csv
+import functools
 import hmac
 import io
 import json
@@ -26,6 +28,7 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from starlette.middleware.sessions import SessionMiddleware
+from starlette import status
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import crm_service
@@ -379,6 +382,9 @@ class User(Base):
         if self.marketing_status in {"subscribed", "not_opted_in", "unsubscribed"}:
             return self.marketing_status
         return "subscribed" if self.marketing_opt_in else "not_opted_in"
+
+
+Customer = User
 
 
 class Account(Base):
@@ -3011,6 +3017,126 @@ async def crm_api_bulk_undo(
     if not success:
         raise HTTPException(400, message)
     return {"success": True, "message": message}
+
+
+def require_POST(func):
+    """Decorator ensuring view handler only accepts POST requests."""
+    @functools.wraps(func)
+    async def async_wrapper(*args, **kwargs):
+        request = next((arg for arg in args if isinstance(arg, Request)), kwargs.get("request"))
+        if request and request.method != "POST":
+            raise HTTPException(status_code=405, detail="Method Not Allowed")
+        return await func(*args, **kwargs)
+
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        request = next((arg for arg in args if isinstance(arg, Request)), kwargs.get("request"))
+        if request and request.method != "POST":
+            raise HTTPException(status_code=405, detail="Method Not Allowed")
+        return func(*args, **kwargs)
+
+    return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+
+
+@app.post("/admin/crm/customers/add", name="add_customer_view")
+@app.post("/admin/crm/add-customer", name="add_customer")
+@require_POST
+async def add_customer_view(
+    request: Request,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    await verify_crm_token(request)
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+    else:
+        form = await request.form()
+        data = dict(form)
+
+    first_name = str(data.get("first_name", "")).strip()
+    last_name = str(data.get("last_name", "")).strip()
+    email = str(data.get("email", "")).strip().lower()
+    phone = str(data.get("phone", "")).strip()
+    channel = str(data.get("channel", "Direct Web")).strip()
+    if channel not in {"Direct Web", "Guest Checkout", "Store Agent Portal"}:
+        channel = "Direct Web"
+
+    raw_consent = data.get("marketing_consent")
+    if raw_consent is None:
+        raw_consent = data.get("marketing_opt_in")
+    marketing_consent = raw_consent in (True, "true", "on", "1", "yes", "checked")
+
+    # Required validation
+    if not first_name or not last_name or not email:
+        error_msg = "First name, last name, and email are required."
+        if "application/json" in content_type:
+            raise HTTPException(400, error_msg)
+        request.session["flash"] = ["error", error_msg]
+        return RedirectResponse(request.url_for("admin_crm"), status_code=status.HTTP_303_SEE_OTHER)
+
+    if "@" not in email or "." not in email:
+        error_msg = "Please enter a valid email address."
+        if "application/json" in content_type:
+            raise HTTPException(400, error_msg)
+        request.session["flash"] = ["error", error_msg]
+        return RedirectResponse(request.url_for("admin_crm"), status_code=status.HTTP_303_SEE_OTHER)
+
+    # Duplicate email check
+    existing = db.query(Customer).filter(func.lower(Customer.email) == email).first()
+    if existing:
+        error_msg = f"A customer with email '{email}' already exists."
+        if "application/json" in content_type:
+            raise HTTPException(400, error_msg)
+        request.session["flash"] = ["error", error_msg]
+        return RedirectResponse(request.url_for("admin_crm"), status_code=status.HTTP_303_SEE_OTHER)
+
+    customer = Customer(
+        first_name=first_name,
+        last_name=last_name,
+        email=email,
+        phone=phone,
+        password_hash=generate_password_hash(secrets.token_urlsafe(32)),
+        acquisition_channel=channel,
+        acquisition_type="New sign-up",
+        marketing_opt_in=marketing_consent,
+        marketing_status="subscribed" if marketing_consent else "not_opted_in",
+        role="customer",
+        created_at=datetime.utcnow(),
+    )
+    db.add(customer)
+    db.flush()
+
+    create_activity_log(
+        db,
+        actor=admin,
+        module="crm",
+        action="created_customer",
+        entity_type="user",
+        entity_id=customer.id,
+        details=f"Added customer {first_name} {last_name} ({email}) via CRM modal.",
+    )
+    db.add(CustomerInteraction(
+        customer_id=customer.id,
+        type="system",
+        title="Customer Profile Created",
+        content=f"Registered via {channel} with marketing consent: {'Subscribed' if marketing_consent else 'Not opted-in'}.",
+        author_id=admin.id,
+        author_name=f"{admin.first_name} {admin.last_name}",
+        created_at=datetime.utcnow(),
+    ))
+    db.commit()
+
+    success_msg = f"Customer {first_name} {last_name} added successfully."
+    request.session["flash"] = ["success", success_msg]
+
+    if "application/json" in content_type:
+        return {"success": True, "message": success_msg, "customer_id": customer.id}
+
+    return RedirectResponse(request.url_for("admin_crm"), status_code=status.HTTP_303_SEE_OTHER)
 
 
 @app.get("/admin/inventory", name="admin_inventory", response_class=HTMLResponse)

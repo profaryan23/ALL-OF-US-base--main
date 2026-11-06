@@ -671,6 +671,7 @@
       window.crmCloseCustomerDetail();
       window.crmCloseSegmentModal();
       window.crmCloseEmailModal();
+      window.crmCloseAddCustomerModal();
       return;
     }
 
@@ -923,6 +924,23 @@
       rules: rules,
       color: '#7c3aed',
     });
+  };
+
+  // --- Add Customer Modal ---
+  window.crmOpenAddCustomerModal = function () {
+    const modal = $('#crm-add-customer-modal');
+    if (modal) modal.classList.add('open');
+    const input = $('#crm-add-first-name');
+    if (input) setTimeout(() => input.focus(), 60);
+  };
+
+  window.crmCloseAddCustomerModal = function () {
+    const modal = $('#crm-add-customer-modal');
+    if (modal) modal.classList.remove('open');
+  };
+
+  window.crmHandleAddCustomerSubmit = function (event) {
+    return true;
   };
 
   // --- Smart Segment Builder Modal ---

@@ -1443,3 +1443,15 @@
   cursor: pointer;
 }
 
+/* Alpine.js cloak and Add Customer Form */
+[x-cloak] {
+  display: none !important;
+}
+
+.crm-add-form input:focus,
+.crm-add-form select:focus {
+  border-color: #111111 !important;
+  outline: none;
+  box-shadow: 0 0 0 1px #111111;
+}
+

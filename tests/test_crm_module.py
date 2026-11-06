@@ -38,19 +38,23 @@ class CRMModuleTests(unittest.TestCase):
                 db.commit()
             self.admin_id = self.admin.id
 
-    def make_request(self, method="GET", path="/admin/crm", query_string=b"", session=None, json_data=None):
+    def make_request(self, method="GET", path="/admin/crm", query_string=b"", session=None, json_data=None, form_data=None):
         sess = {"user_id": self.admin_id, "csrf_token": "valid_token"}
         if session:
             sess.update(session)
+        headers = [
+            (b"x-csrf-token", b"valid_token"),
+        ]
+        if json_data is not None:
+            headers.append((b"content-type", b"application/json"))
+        elif form_data is not None:
+            headers.append((b"content-type", b"application/x-www-form-urlencoded"))
         scope = {
             "type": "http",
             "method": method,
             "path": path,
             "query_string": query_string,
-            "headers": [
-                (b"x-csrf-token", b"valid_token"),
-                (b"content-type", b"application/json"),
-            ],
+            "headers": headers,
             "session": sess,
             "app": main.app,
         }
@@ -59,6 +63,10 @@ class CRMModuleTests(unittest.TestCase):
             async def _json():
                 return json_data
             req.json = _json
+        if form_data is not None:
+            async def _form():
+                return form_data
+            req.form = _form
         return req
 
     def test_admin_crm_page_renders_with_kpi_and_ux_components(self):
@@ -67,6 +75,14 @@ class CRMModuleTests(unittest.TestCase):
             response = main.admin_crm(req, self.admin, db)
             self.assertEqual(response.status_code, 200)
             html = response.body.decode("utf-8")
+
+            # Top Actions & Add Customer Modal
+            self.assertIn("+ Add Customer", html)
+            self.assertIn("showAddModal", html)
+            self.assertIn("crm-add-customer-modal", html)
+            self.assertIn("First Name", html)
+            self.assertIn("Acquisition Channel", html)
+            self.assertIn("Marketing & Email Bulletins Consent", html)
 
             # A. Global KPI & Filter Bar
             self.assertIn("Total Customers", html)
@@ -298,6 +314,114 @@ class CRMModuleTests(unittest.TestCase):
             self.assertIn("Total spend", csv_text)
             self.assertIn("Rank", csv_text)
             self.assertIn("Channel", csv_text)
+
+    def test_add_customer_view_creates_customer_and_sets_flash(self):
+        with main.SessionLocal() as db:
+            test_email = "dipesh.malla@example.com"
+            # Cleanup if existed previously
+            db.query(main.User).filter_by(email=test_email).delete()
+            db.commit()
+
+            form_payload = {
+                "first_name": "Dipesh",
+                "last_name": "Malla",
+                "email": test_email,
+                "phone": "+977-9812345678",
+                "channel": "Store Agent Portal",
+                "marketing_consent": "on",
+            }
+            req = self.make_request(
+                method="POST",
+                path="/admin/crm/customers/add",
+                form_data=form_payload,
+            )
+
+            res = run_coro(main.add_customer_view(req, self.admin, db))
+            self.assertEqual(res.status_code, 303)
+            self.assertEqual(req.session.get("flash"), ["success", "Customer Dipesh Malla added successfully."])
+
+            # Verify saved in db
+            created = db.query(main.User).filter_by(email=test_email).first()
+            self.assertIsNotNone(created)
+            self.assertEqual(created.first_name, "Dipesh")
+            self.assertEqual(created.last_name, "Malla")
+            self.assertEqual(created.role, "customer")
+            self.assertEqual(created.acquisition_channel, "Store Agent Portal")
+            self.assertTrue(created.marketing_opt_in)
+            self.assertEqual(created.resolved_marketing_status, "subscribed")
+
+    def test_add_customer_view_duplicate_detection(self):
+        with main.SessionLocal() as db:
+            existing = db.query(main.User).filter_by(role="customer").first()
+            self.assertIsNotNone(existing)
+
+            form_payload = {
+                "first_name": "Duplicate",
+                "last_name": "User",
+                "email": existing.email,
+                "phone": "+977-9800000000",
+                "channel": "Direct Web",
+            }
+            req = self.make_request(
+                method="POST",
+                path="/admin/crm/customers/add",
+                form_data=form_payload,
+            )
+
+            res = run_coro(main.add_customer_view(req, self.admin, db))
+            self.assertEqual(res.status_code, 303)
+            self.assertEqual(req.session.get("flash")[0], "error")
+            self.assertIn("already exists", req.session.get("flash")[1])
+
+    def test_add_customer_view_require_post_enforcement(self):
+        with main.SessionLocal() as db:
+            req_get = self.make_request(method="GET", path="/admin/crm/customers/add")
+            with self.assertRaises(main.HTTPException) as ctx:
+                run_coro(main.add_customer_view(req_get, self.admin, db))
+            self.assertEqual(ctx.exception.status_code, 405)
+
+    def test_views_and_urls_django_compatibility(self):
+        import views
+        import urls
+
+        self.assertIs(views.Customer, main.User)
+        self.assertTrue(hasattr(views, "add_customer_view"))
+        self.assertTrue(hasattr(views, "require_POST"))
+        self.assertTrue(hasattr(urls, "urlpatterns"))
+        self.assertGreaterEqual(len(urls.urlpatterns), 1)
+
+    def test_import_legacy_customers_utility(self):
+        import io
+        import import_legacy_customers
+
+        csv_content = """email,first_name,last_name,phone,joined_date,total_spend,orders,channel,marketing_consent
+aarav.sharma@example.com,Aarav,Sharma,+977-9801234567,2025-01-10,350.00,4,Direct Web,yes
+test.migrated.user@example.com,Pooja,Rana,+977-9844445555,2025-04-12,220.00,3,Guest Checkout,yes
+"""
+        with main.SessionLocal() as db:
+            # Clean up prior test user if present
+            db.query(main.User).filter_by(email="test.migrated.user@example.com").delete()
+            db.commit()
+
+            # First run: 1 existing, 1 new
+            report = import_legacy_customers.import_legacy_customers(io.StringIO(csv_content), db=db)
+            self.assertEqual(report["total_rows"], 2)
+            self.assertEqual(report["created_count"], 1)
+            self.assertEqual(report["updated_count"], 1)
+
+            # Verify created user
+            migrated = db.query(main.User).filter_by(email="test.migrated.user@example.com").first()
+            self.assertIsNotNone(migrated)
+            self.assertEqual(migrated.first_name, "Pooja")
+            self.assertEqual(migrated.last_name, "Rana")
+            self.assertEqual(migrated.acquisition_channel, "Guest Checkout")
+            self.assertTrue(migrated.marketing_opt_in)
+            self.assertGreaterEqual(len(migrated.orders), 1)
+
+            # Second run: 0 created, 2 updated/existing (get_or_create deduplication check)
+            report_second = import_legacy_customers.import_legacy_customers(io.StringIO(csv_content), db=db)
+            self.assertEqual(report_second["created_count"], 0)
+            self.assertEqual(report_second["updated_count"], 2)
 
 
 if __name__ == "__main__":
