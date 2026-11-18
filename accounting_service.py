@@ -96,7 +96,7 @@ def migrate_enterprise_accounting_schema(engine, Base, SessionLocal):
 
 def seed_enterprise_accounting(SessionLocal):
     """Ensure standard enterprise chart of accounts, FX rates, and settings exist."""
-    from main import Account
+    from main import Account, AccountingSettings, FXRate, ReconciliationItem
 
     with SessionLocal() as db:
         # Standard Chart of Accounts
@@ -131,9 +131,9 @@ def seed_enterprise_accounting(SessionLocal):
                 if not getattr(acc, "cost_center", None):
                     acc.cost_center = cost_center
 
-        # Seed Settings if missing
-        settings_row = db.execute(text("SELECT id FROM accounting_settings LIMIT 1")).fetchone()
-        if not settings_row:
+        # Seed Settings if missing using ORM model (ensures cross-db boolean & timestamp compatibility)
+        settings = db.query(AccountingSettings).filter_by(id=1).first()
+        if not settings:
             initial_checklist = json.dumps({
                 "accruals": True,
                 "prepayments": True,
@@ -142,14 +142,20 @@ def seed_enterprise_accounting(SessionLocal):
                 "inventory_cogs": True,
             })
             passcode_hash = generate_password_hash(DEFAULT_OVERRIDE_PASSCODE)
-            db.execute(text("""
-                INSERT INTO accounting_settings (id, lock_state, lock_passcode_hash, threshold_amount, require_dual_auth, checklist_json, updated_at)
-                VALUES (1, 'open', :passcode_hash, 50000.00, 0, :checklist, :now)
-            """), {"passcode_hash": passcode_hash, "checklist": initial_checklist, "now": datetime.utcnow()})
+            settings = AccountingSettings(
+                id=1,
+                lock_state="open",
+                lock_passcode_hash=passcode_hash,
+                threshold_amount=Decimal("50000.00"),
+                require_dual_auth=False,
+                checklist_json=initial_checklist,
+                updated_at=datetime.utcnow(),
+            )
+            db.add(settings)
 
-        # Seed initial FX Rates vs PKR base if missing
-        fx_count = db.execute(text("SELECT COUNT(*) FROM fx_rates")).scalar()
-        if not fx_count:
+        # Seed initial FX Rates vs PKR base if missing using ORM
+        fx_count = db.query(FXRate).count()
+        if fx_count == 0:
             initial_fx = [
                 ("USD", "PKR", Decimal("278.50"), Decimal("277.60"), Decimal("0.32"), Decimal("145000.00")),
                 ("EUR", "PKR", Decimal("302.10"), Decimal("302.55"), Decimal("-0.15"), Decimal("95000.00")),
@@ -157,23 +163,20 @@ def seed_enterprise_accounting(SessionLocal):
                 ("AED", "PKR", Decimal("75.80"), Decimal("75.76"), Decimal("0.05"), Decimal("42000.00")),
             ]
             for curr, base, cur_rate, prev_rate, drift, exposure in initial_fx:
-                db.execute(text("""
-                    INSERT INTO fx_rates (currency, base_currency, current_rate, previous_rate, drift_pct, unrealized_exposure, last_settled_at, updated_at)
-                    VALUES (:curr, :base, :cur_rate, :prev_rate, :drift, :exposure, :settled, :now)
-                """), {
-                    "curr": curr,
-                    "base": base,
-                    "cur_rate": cur_rate,
-                    "prev_rate": prev_rate,
-                    "drift": drift,
-                    "exposure": exposure,
-                    "settled": datetime.utcnow() - timedelta(days=2),
-                    "now": datetime.utcnow(),
-                })
+                db.add(FXRate(
+                    currency=curr,
+                    base_currency=base,
+                    current_rate=cur_rate,
+                    previous_rate=prev_rate,
+                    drift_pct=drift,
+                    unrealized_exposure=exposure,
+                    last_settled_at=datetime.utcnow() - timedelta(days=2),
+                    updated_at=datetime.utcnow(),
+                ))
 
-        # Seed Reconciliation Items if missing
-        recon_count = db.execute(text("SELECT COUNT(*) FROM reconciliation_items")).scalar()
-        if not recon_count:
+        # Seed Reconciliation Items if missing using ORM
+        recon_count = db.query(ReconciliationItem).count()
+        if recon_count == 0:
             sample_recons = [
                 (datetime.utcnow() - timedelta(days=1), "STRIPE-BATCH-8910", "Stripe Connect", Decimal("24500.00"), Decimal("710.50"), Decimal("23789.50"), "fee_variance"),
                 (datetime.utcnow() - timedelta(days=3), "BANK-WIRE-4412", "HBL Wire Payout", Decimal("55810.00"), Decimal("350.00"), Decimal("55460.00"), "fee_variance"),
@@ -181,10 +184,16 @@ def seed_enterprise_accounting(SessionLocal):
                 (datetime.utcnow() - timedelta(days=7), "PAYPAL-DISPATCH-32", "PayPal Global", Decimal("12400.00"), Decimal("420.00"), Decimal("11980.00"), "unreconciled"),
             ]
             for fdate, ref, gw, gross, fee, net_amt, st in sample_recons:
-                db.execute(text("""
-                    INSERT INTO reconciliation_items (feed_date, reference, gateway_name, gross_amount, fee_amount, net_amount, status, notes)
-                    VALUES (:fdate, :ref, :gw, :gross, :fee, :net_amt, :st, 'Auto-imported payout feed')
-                """), {"fdate": fdate, "ref": ref, "gw": gw, "gross": gross, "fee": fee, "net_amt": net_amt, "st": st})
+                db.add(ReconciliationItem(
+                    feed_date=fdate,
+                    reference=ref,
+                    gateway_name=gw,
+                    gross_amount=gross,
+                    fee_amount=fee,
+                    net_amount=net_amt,
+                    status=st,
+                    notes="Auto-imported payout feed",
+                ))
 
         db.commit()
 
@@ -255,13 +264,13 @@ def update_lock_state(db: Session, new_state: str, passcode: str = None, user=No
         if not valid:
             return False, "Invalid override passcode."
 
-    db.execute(text("UPDATE accounting_settings SET lock_state = :st, updated_at = :now WHERE id = 1"), {
-        "st": new_state,
-        "now": datetime.utcnow(),
-    })
+    from main import AccountingSettings, create_activity_log
+    settings = db.query(AccountingSettings).filter_by(id=1).first()
+    if settings:
+        settings.lock_state = new_state
+        settings.updated_at = datetime.utcnow()
     db.commit()
 
-    from main import create_activity_log
     create_activity_log(
         db,
         actor=user,
@@ -297,10 +306,11 @@ def update_checklist_item(db: Session, task_key: str, completed: bool) -> Tuple[
     checklist[task_key] = bool(completed)
     updated_json = json.dumps(checklist)
 
-    db.execute(text("UPDATE accounting_settings SET checklist_json = :cl, updated_at = :now WHERE id = 1"), {
-        "cl": updated_json,
-        "now": datetime.utcnow(),
-    })
+    from main import AccountingSettings
+    settings = db.query(AccountingSettings).filter_by(id=1).first()
+    if settings:
+        settings.checklist_json = updated_json
+        settings.updated_at = datetime.utcnow()
     db.commit()
 
     total_tasks = 5
@@ -311,18 +321,26 @@ def update_checklist_item(db: Session, task_key: str, completed: bool) -> Tuple[
 
 def update_approval_rules(db: Session, threshold: Decimal, require_dual_auth: bool, user=None) -> Tuple[bool, str]:
     """Updates sign-off threshold and dual authorization governance rules."""
-    db.execute(text("""
-        UPDATE accounting_settings
-        SET threshold_amount = :th, require_dual_auth = :da, updated_at = :now
-        WHERE id = 1
-    """), {
-        "th": threshold,
-        "da": 1 if require_dual_auth else 0,
-        "now": datetime.utcnow(),
-    })
+    from main import AccountingSettings, create_activity_log
+
+    settings = db.query(AccountingSettings).filter_by(id=1).first()
+    if settings:
+        settings.threshold_amount = threshold
+        settings.require_dual_auth = bool(require_dual_auth)
+        settings.updated_at = datetime.utcnow()
+    else:
+        settings = AccountingSettings(
+            id=1,
+            lock_state="open",
+            lock_passcode_hash=generate_password_hash(DEFAULT_OVERRIDE_PASSCODE),
+            threshold_amount=threshold,
+            require_dual_auth=bool(require_dual_auth),
+            checklist_json="{}",
+            updated_at=datetime.utcnow(),
+        )
+        db.add(settings)
     db.commit()
 
-    from main import create_activity_log
     create_activity_log(
         db,
         actor=user,
