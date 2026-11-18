@@ -12,19 +12,24 @@
     <!-- User Profile Header: Circular Avatar, Name, Email (Matching Reference Image) -->
     <div class="sidebar-profile-card">
       <div class="sidebar-avatar-wrap">
-        {% if current_user and current_user.profile_image %}
-          <img src="{{ url_for('static', filename=current_user.profile_image) }}" alt="{{ current_user.first_name }}" class="sidebar-avatar-img">
-        {% else %}
-          <div class="sidebar-avatar-circle" aria-hidden="true">
-            <svg width="42" height="42" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 4c1.93 0 3.5 1.57 3.5 3.5S13.93 13 12 13s-3.5-1.57-3.5-3.5S10.07 6 12 6zm0 14c-2.03 0-4.43-.82-6.14-2.88C7.55 15.8 9.68 15 12 15s4.45.8 6.14 2.12C16.43 19.18 14.03 20 12 20z"/>
-            </svg>
+        <div class="sidebar-avatar-container" style="position: relative; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: linear-gradient(145deg, #2a2a2a, #141414); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.22); flex-shrink: 0; box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.03);">
+          {% if current_user and current_user.profile_image %}
+            <img src="{{ url_for('static', filename=current_user.profile_image) }}" alt="{{ current_user.first_name }}" class="sidebar-avatar-img" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          {% endif %}
+          <div class="sidebar-avatar-fallback" style="{% if current_user and current_user.profile_image %}display: none;{% else %}display: flex;{% endif %} width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #ffffff; letter-spacing: 0.05em; text-transform: uppercase;">
+            {% if current_user and current_user.first_name and current_user.last_name %}
+              {{ current_user.first_name[:1] }}{{ current_user.last_name[:1] }}
+            {% elif current_user and current_user.first_name %}
+              {{ current_user.first_name[:1] }}
+            {% else %}
+              AU
+            {% endif %}
           </div>
-        {% endif %}
+        </div>
       </div>
-      <div class="sidebar-user-meta">
-        <h3 class="sidebar-user-name">{% if current_user %}{{ current_user.first_name }} {{ current_user.last_name }}{% else %}JOHN DON{% endif %}</h3>
-        <p class="sidebar-user-email">{% if current_user %}{{ current_user.email }}{% else %}johndon@company.com{% endif %}</p>
+      <div class="sidebar-user-meta" style="min-width: 0; flex: 1; overflow: hidden;">
+        <h3 class="sidebar-user-name" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; color: #ffffff;">{% if current_user %}{{ current_user.first_name }} {{ current_user.last_name }}{% else %}ALL OF US ADMIN{% endif %}</h3>
+        <p class="sidebar-user-email" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin: 2px 0 0; font-size: 11px; color: #94a3b8; display: block; max-width: 100%;" title="{% if current_user %}{{ current_user.email }}{% else %}admin@allofus.com{% endif %}">{% if current_user %}{{ current_user.email }}{% else %}admin@allofus.com{% endif %}</p>
         <a href="{{ url_for('admin_profile') }}">Edit profile & picture</a>
       </div>
     </div>
@@ -281,7 +286,7 @@
           </div>
         </div>
 
-        <span class="welcome">Hi, {{ current_user.first_name }}</span>
+        <span class="welcome admin-greeting" style="font-size: 13.5px; font-weight: 600; color: #0a0a0a; letter-spacing: -0.01em;">Hi, {{ current_user.first_name }}</span>
         <a class="back-link" href="{{ url_for('storefront') }}">View storefront ↗</a>
       </div>
     </div>

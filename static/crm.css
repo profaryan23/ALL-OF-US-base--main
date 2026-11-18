@@ -319,11 +319,12 @@
    ========================================================================== */
 .crm-insights-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1.6fr;
+  grid-template-columns: 1.15fr 1fr;
   gap: 14px;
+  align-items: stretch;
 }
 
-@media (max-width: 980px) {
+@media (max-width: 1080px) {
   .crm-insights-grid {
     grid-template-columns: 1fr;
   }
@@ -332,11 +333,13 @@
 .crm-panel-card {
   background: var(--crm-card-bg);
   border: 1px solid var(--crm-line);
-  padding: 18px 20px;
+  padding: 16px 18px;
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
 }
 
 .crm-panel-head {
@@ -370,17 +373,29 @@
 
 /* Timeline SVG Container */
 .crm-timeline-container {
-  min-height: 175px;
+  min-height: 140px;
   position: relative;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  overflow: hidden;
 }
 
 .crm-timeline-svg {
   width: 100%;
-  height: 155px;
-  overflow: visible;
+  height: 135px;
+  overflow: hidden;
+  display: block;
+}
+
+.crm-bar-rect {
+  transition: opacity 0.15s ease, filter 0.15s ease;
+  cursor: pointer;
+}
+
+.crm-bar-rect:hover {
+  filter: brightness(1.2);
+  opacity: 0.9;
 }
 
 .crm-timeline-legend {
@@ -389,7 +404,7 @@
   gap: 16px;
   font-size: 10px;
   color: var(--crm-ink-muted);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .crm-legend-dot {
@@ -404,10 +419,11 @@
 .crm-donuts-wrap {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 10px;
+  height: 100%;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .crm-donuts-wrap {
     grid-template-columns: 1fr;
   }
@@ -416,45 +432,52 @@
 .crm-donut-box {
   background: var(--crm-highlight);
   border: 1px solid var(--crm-line);
-  padding: 14px;
+  padding: 10px 12px;
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  justify-content: space-between;
   position: relative;
 }
 
 .crm-donut-title {
-  font-size: 10.5px;
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 600;
+  letter-spacing: 0.05em;
+  font-weight: 700;
   color: var(--crm-ink-muted);
-  margin-bottom: 8px;
-  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+.crm-donut-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .crm-donut-svg-wrap {
   position: relative;
-  width: 130px;
-  height: 130px;
-  margin: 6px 0;
+  width: 90px;
+  height: 90px;
+  flex-shrink: 0;
+  margin: 0;
 }
 
 .crm-donut-svg {
   width: 100%;
   height: 100%;
   transform: rotate(-90deg);
+  display: block;
 }
 
 .crm-donut-slice {
   cursor: pointer;
-  transition: transform 0.2s ease, opacity 0.2s ease, stroke-width 0.2s ease;
+  transition: stroke-width 0.15s ease, opacity 0.15s ease;
   transform-origin: center;
 }
 
 .crm-donut-slice:hover, .crm-donut-slice.active {
-  stroke-width: 20;
+  stroke-width: 16;
   opacity: 1 !important;
 }
 
@@ -469,11 +492,12 @@
   transform: translate(-50%, -50%);
   text-align: center;
   pointer-events: none;
+  line-height: 1;
 }
 
 .crm-donut-center strong {
   display: block;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--crm-ink);
   line-height: 1;
@@ -481,19 +505,20 @@
 
 .crm-donut-center small {
   display: block;
-  font-size: 8px;
+  font-size: 7px;
   text-transform: uppercase;
   color: var(--crm-ink-subtle);
   margin-top: 2px;
+  letter-spacing: 0.03em;
 }
 
 .crm-donut-legend {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  margin-top: 8px;
-  font-size: 9.5px;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+  font-size: 9px;
 }
 
 .crm-donut-legend-item {
@@ -504,6 +529,21 @@
   border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.crm-donut-legend-item span {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--crm-ink);
+}
+
+.crm-donut-legend-item strong {
+  font-size: 9px;
+  color: var(--crm-ink);
+  margin-left: 4px;
 }
 
 .crm-donut-legend-item:hover, .crm-donut-legend-item.active {

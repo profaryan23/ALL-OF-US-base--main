@@ -32,6 +32,7 @@ from starlette import status
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import crm_service
+import accounting_service
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +396,7 @@ class Account(Base):
     type: Mapped[str] = mapped_column(String(24), default="ASSET")
     normal_balance: Mapped[str] = mapped_column(String(8), default="DEBIT")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    cost_center: Mapped[str] = mapped_column(String(50), default="")
     journal_lines: Mapped[list["JournalLine"]] = relationship(back_populates="account")
 
 
@@ -406,6 +408,12 @@ class JournalEntry(Base):
     reference_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description: Mapped[str] = mapped_column(String(500), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    status: Mapped[str] = mapped_column(String(30), default="posted")
+    cost_center: Mapped[str] = mapped_column(String(50), default="")
+    currency: Mapped[str] = mapped_column(String(10), default="PKR")
+    attachments: Mapped[str] = mapped_column(Text, default="[]")
+    approved_by: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     lines: Mapped[list["JournalLine"]] = relationship(back_populates="journal_entry", cascade="all, delete-orphan")
 
     @property
@@ -424,8 +432,48 @@ class JournalLine(Base):
     account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"), index=True)
     debit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
     credit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    cost_center: Mapped[str] = mapped_column(String(50), default="")
+    notes: Mapped[str] = mapped_column(String(255), default="")
     journal_entry: Mapped[JournalEntry] = relationship(back_populates="lines")
     account: Mapped[Account] = relationship(back_populates="journal_lines")
+
+
+class AccountingSettings(Base):
+    __tablename__ = "accounting_settings"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    lock_state: Mapped[str] = mapped_column(String(20), default="open")
+    lock_passcode_hash: Mapped[str] = mapped_column(String(255), default="")
+    threshold_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("50000.00"))
+    require_dual_auth: Mapped[bool] = mapped_column(Boolean, default=False)
+    checklist_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class FXRate(Base):
+    __tablename__ = "fx_rates"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    currency: Mapped[str] = mapped_column(String(10), unique=True)
+    base_currency: Mapped[str] = mapped_column(String(10), default="PKR")
+    current_rate: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    previous_rate: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    drift_pct: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("0.00"))
+    unrealized_exposure: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=Decimal("0.00"))
+    last_settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReconciliationItem(Base):
+    __tablename__ = "reconciliation_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reference: Mapped[str] = mapped_column(String(100))
+    gateway_name: Mapped[str] = mapped_column(String(60))
+    gross_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    fee_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal("0.00"))
+    net_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(30), default="unreconciled")
+    matched_entry_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    notes: Mapped[str] = mapped_column(String(255), default="")
 
 
 class Product(Base):
@@ -936,6 +984,7 @@ def get_account_balance(db: Session, account_id: int, as_of: datetime | None = N
         )
         .join(JournalEntry, JournalLine.journal_entry_id == JournalEntry.id)
         .filter(JournalLine.account_id == account_id)
+        .filter(JournalEntry.status.notin_(["pending_approval", "rejected"]))
     )
     if as_of is not None:
         statement = statement.filter(JournalEntry.date <= as_of)
@@ -943,9 +992,32 @@ def get_account_balance(db: Session, account_id: int, as_of: datetime | None = N
     return Decimal(str(total))
 
 
-def post_journal_entry(db: Session, *, date: datetime, reference_type: str, reference_id: int | None, description: str, lines: list[dict]) -> JournalEntry:
+def post_journal_entry(
+    db: Session,
+    *,
+    date: datetime,
+    reference_type: str,
+    reference_id: int | None,
+    description: str,
+    lines: list[dict],
+    cost_center: str = "",
+    currency: str = "PKR",
+    attachments: list[str] = None,
+    override_lock: bool = False,
+    override_passcode: str = "",
+) -> JournalEntry:
     if not lines:
         raise ValueError("A journal entry requires at least one line item.")
+
+    settings = accounting_service.get_accounting_settings(db)
+
+    # 1. Period Lock Check
+    lock_state = settings.get("lock_state", "open")
+    if lock_state == "hard_lock" and not override_lock:
+        raise ValueError("Fiscal period is HARD LOCKED. Posting is disabled globally without CFO/Admin passcode authorization.")
+    elif override_lock:
+        if not accounting_service.verify_override_passcode(db, override_passcode):
+            raise ValueError("Invalid CFO/Admin passcode for hard-lock override.")
 
     normalized_lines = []
     total_debit = Decimal("0.00")
@@ -962,10 +1034,13 @@ def post_journal_entry(db: Session, *, date: datetime, reference_type: str, refe
             raise ValueError("Journal lines must be either debit or credit, not both.")
         total_debit += debit
         total_credit += credit
+        line_cc = str(line.get("cost_center") or cost_center or account.cost_center or "").strip()
         normalized_lines.append({
             "account_id": account.id,
             "debit": debit,
             "credit": credit,
+            "cost_center": line_cc,
+            "notes": str(line.get("notes", "")).strip()[:255],
         })
 
     if total_debit == Decimal("0.00") and total_credit == Decimal("0.00"):
@@ -973,13 +1048,27 @@ def post_journal_entry(db: Session, *, date: datetime, reference_type: str, refe
     if total_debit != total_credit:
         raise ValueError("Journal entry failed validation: debits must equal credits.")
 
+    # 2. Threshold Routing & Approval State
+    threshold = Decimal(str(settings.get("threshold_amount", 50000.00)))
+    ref_type = str(reference_type or "ORDER").upper()
+    if total_debit >= threshold and ref_type not in {"ORDER", "FX_SETTLE", "RECON_ADJ"} and not override_lock:
+        entry_status = "pending_approval"
+    else:
+        entry_status = "posted"
+
+    attach_json = json.dumps(attachments or [])
     entry = JournalEntry(
         date=date,
-        reference_type=str(reference_type or "ORDER").upper(),
+        reference_type=ref_type,
         reference_id=reference_id,
         description=str(description or "")[:500],
+        status=entry_status,
+        cost_center=cost_center or (normalized_lines[0]["cost_center"] if normalized_lines else ""),
+        currency=currency or "PKR",
+        attachments=attach_json,
     )
-    with db.begin():
+
+    if db.in_transaction():
         db.add(entry)
         db.flush()
         db.add_all([
@@ -988,10 +1077,28 @@ def post_journal_entry(db: Session, *, date: datetime, reference_type: str, refe
                 account_id=item["account_id"],
                 debit=item["debit"],
                 credit=item["credit"],
+                cost_center=item["cost_center"],
+                notes=item["notes"],
             )
             for item in normalized_lines
         ])
         db.flush()
+    else:
+        with db.begin():
+            db.add(entry)
+            db.flush()
+            db.add_all([
+                JournalLine(
+                    journal_entry_id=entry.id,
+                    account_id=item["account_id"],
+                    debit=item["debit"],
+                    credit=item["credit"],
+                    cost_center=item["cost_center"],
+                    notes=item["notes"],
+                )
+                for item in normalized_lines
+            ])
+            db.flush()
     return entry
 
 
@@ -1008,6 +1115,7 @@ async def lifespan(_app: FastAPI):
     migrate_catalog_schema()
     migrate_page_content()
     migrate_accounting_schema()
+    accounting_service.migrate_enterprise_accounting_schema(engine, Base, SessionLocal)
     crm_service.migrate_crm_schema(engine, Base, SessionLocal, IS_PRODUCTION)
     resolve_admin_credentials_from_environment()
     seed_database()

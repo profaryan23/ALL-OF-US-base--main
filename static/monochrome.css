@@ -1747,13 +1747,34 @@ body:has(.admin-sidebar-layout) .site-header .main-nav {
   font-size: 12px;
   line-height: 1.5;
   letter-spacing: 0.035em;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.admin-sidebar .sidebar-user-email {
-  color: var(--studio-muted);
-  font-size: 11px;
-  line-height: 1.6;
+.admin-sidebar .sidebar-user-email,
+.sidebar-user-email {
+  color: var(--studio-muted, #94a3b8) !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 100% !important;
+  display: block !important;
+  word-break: normal !important;
+}
+
+.admin-top-actions .welcome,
+.welcome.admin-greeting {
+  color: #0a0a0a !important;
+  font-weight: 600 !important;
+  font-size: 13.5px !important;
+  letter-spacing: -0.01em !important;
+  display: inline-flex !important;
+  align-items: center !important;
 }
 
 .admin-sidebar .sidebar-user-meta a {

@@ -5,30 +5,659 @@
 {% block content %}{% if profile_mode in ['admin', 'agent'] %}{{ super() }}{% else %}{{ self.profile_form() }}{% endif %}{% endblock %}
 {% block module_content %}{{ self.profile_form() }}{% endblock %}
 {% block profile_form %}
-<section class="auth-shell narrow-shell">
-  <div class="auth-card">
-    <div class="auth-header">
-      <p class="eyebrow">Your profile</p>
-      <h1>Manage your account</h1>
-    </div>
+<style>
+  /* Scoped Profile Modern Minimal Dashboard Styles */
+  .profile-workspace-canvas {
+    max-width: 860px;
+    margin: 0;
+    padding: 6px 0 48px;
+    box-sizing: border-box;
+  }
 
-    <form method="post" action="{{ url_for('admin_profile_update') if profile_mode == 'admin' else url_for('agent_profile_update') if profile_mode == 'agent' else url_for('account_profile_update') }}" enctype="multipart/form-data" class="stack-form">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <label>First name<input name="first_name" value="{{ user.first_name }}" required></label>
-      <label>Last name<input name="last_name" value="{{ user.last_name }}" required></label>
-      <label>Email<input name="email" type="email" maxlength="255" value="{{ user.email }}" required></label>
-      <label>Current password (required only to change email)<input name="current_password" type="password" autocomplete="current-password"></label>
-      <label>Phone<input name="phone" value="{{ user.phone }}" placeholder="Optional phone number"></label>
-      <label>Profile image<input type="file" name="profile_image" accept="image/jpeg,image/png,image/webp"></label>
-      {% if user.profile_image %}
-      <img src="{{ url_for('static', filename=user.profile_image) }}" alt="Current profile" style="max-height: 180px; width: auto; border-radius: 12px; object-fit: cover;">
-      <label><input name="remove_photo" type="checkbox"> Remove profile picture</label>
-      {% endif %}
-      <label>Address<textarea name="address" maxlength="300">{{ user.address }}</textarea></label>
-      <label>About / other details<textarea name="bio" maxlength="1000">{{ user.bio }}</textarea></label>
-      <button class="button button-dark" type="submit">Save profile</button>
-    </form>
-    {% if user.is_admin_like %}<a href="{{ url_for('admin_dashboard') }}">← Back to Studio</a>{% elif user.role == 'agent' %}<a href="{{ url_for('agent_workspace', module='dashboard') }}">← Back to agent workspace</a>{% endif %}
+  .profile-alerts-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 24px;
+  }
+
+  .profile-alert-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 18px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .profile-alert-banner.profile-alert-error,
+  .profile-alert-banner.profile-alert-danger {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+  }
+
+  .profile-alert-banner.profile-alert-success {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+  }
+
+  .profile-alert-banner.profile-alert-info {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    color: #0369a1;
+  }
+
+  /* Structured Grouped Cards */
+  .profile-group-card {
+    background: #ffffff;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 18px;
+    padding: 28px 32px;
+    margin-bottom: 22px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.015);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .profile-group-card:hover {
+    border-color: rgba(0, 0, 0, 0.13);
+  }
+
+  .profile-card-header {
+    margin-bottom: 22px;
+  }
+
+  .profile-card-title {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    color: #0f172a;
+    margin: 0 0 5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .profile-card-desc {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #64748b;
+    margin: 0;
+  }
+
+  /* Card 1 — Profile Picture Row */
+  .profile-avatar-row {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+
+  .profile-avatar-container {
+    position: relative;
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: linear-gradient(145deg, #222222, #0d0d0d);
+    border: 2px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 0 0 5px rgba(0, 0, 0, 0.025);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .profile-avatar-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    user-select: none;
+  }
+
+  .profile-avatar-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .profile-upload-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 7px;
+  }
+
+  .profile-upload-btn-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #0f172a;
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    transition: all 0.18s ease;
+  }
+
+  .profile-upload-btn-label:hover {
+    background: #f8fafc;
+    border-color: #0f172a;
+    color: #000000;
+    transform: translateY(-0.5px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.07);
+  }
+
+  .profile-upload-btn-label:active {
+    transform: translateY(0);
+  }
+
+  .profile-hidden-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  .profile-file-info {
+    font-size: 11.5px;
+    color: #64748b;
+  }
+
+  .profile-remove-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: #475569;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .profile-remove-toggle-label:hover {
+    color: #dc2626;
+  }
+
+  .profile-remove-checkbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid #cbd5e1;
+    accent-color: #0f172a;
+    cursor: pointer;
+  }
+
+  /* Card 2 — Account Information 2-Column Responsive Grid */
+  .profile-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 24px;
+  }
+
+  @media (max-width: 680px) {
+    .profile-grid-2 {
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+  }
+
+  .profile-field-item {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .profile-field-full {
+    margin-top: 20px;
+  }
+
+  .profile-label-text {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #334155;
+    margin: 0;
+  }
+
+  .profile-req-star {
+    color: #ef4444;
+    font-weight: 700;
+  }
+
+  .profile-input-control,
+  .profile-textarea-control {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 11px;
+    font-size: 13.5px;
+    color: #0f172a;
+    font-family: inherit;
+    transition: all 0.15s ease;
+  }
+
+  .profile-input-control:hover,
+  .profile-textarea-control:hover {
+    border-color: #cbd5e1;
+    background: #ffffff;
+  }
+
+  .profile-input-control:focus,
+  .profile-textarea-control:focus {
+    background: #ffffff;
+    border-color: #0f172a;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
+  }
+
+  .profile-input-control::placeholder,
+  .profile-textarea-control::placeholder {
+    color: #94a3b8;
+  }
+
+  .profile-textarea-control {
+    resize: vertical;
+    min-height: 76px;
+    line-height: 1.5;
+  }
+
+  /* Card 3 — Security Verification Isolated Section */
+  .profile-security-card {
+    border-left: 3px solid #0f172a;
+  }
+
+  .profile-security-input-wrap {
+    position: relative;
+    max-width: 480px;
+  }
+
+  .profile-pw-toggle-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #94a3b8;
+    padding: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: color 0.15s ease;
+  }
+
+  .profile-pw-toggle-btn:hover {
+    color: #0f172a;
+  }
+
+  /* Bottom Actions Bar */
+  .profile-actions-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 10px;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .profile-back-studio-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+    text-decoration: none;
+    padding: 10px 16px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .profile-back-studio-link:hover {
+    color: #0f172a;
+    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.06);
+  }
+
+  .profile-submit-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 28px;
+    border-radius: 999px;
+    background: #0a0a0a;
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    border: 1px solid #000000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .profile-submit-pill:hover {
+    background: #262626;
+    border-color: #262626;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  }
+
+  .profile-submit-pill:active {
+    transform: translateY(0);
+  }
+
+  /* Customer View Mode Header */
+  .customer-profile-intro {
+    margin-bottom: 28px;
+  }
+
+  .customer-profile-intro h1 {
+    font: 500 36px/1.15 var(--serif, Georgia, serif);
+    margin: 0;
+    color: #0f172a;
+  }
+
+  .customer-profile-intro .eyebrow {
+    margin-bottom: 6px;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #64748b;
+  }
+</style>
+
+<div class="profile-workspace-canvas">
+  {# Customer Mode Header if not embedded inside Studio / Agent sidebar layout #}
+  {% if profile_mode not in ['admin', 'agent'] %}
+  <div class="customer-profile-intro">
+    <p class="eyebrow">Account</p>
+    <h1>Your profile<span class="heading-period">.</span></h1>
   </div>
-</section>
+  {% endif %}
+
+  {# Flash / Django Messages Notification Banner #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="profile-alerts-stack">
+        {% for category, message in messages %}
+          <div class="profile-alert-banner profile-alert-{{ category }}">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+              {% if category in ['error', 'danger'] %}
+                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+              {% else %}
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+              {% endif %}
+            </svg>
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  <form method="post" action="{{ url_for('admin_profile_update') if profile_mode == 'admin' else url_for('agent_profile_update') if profile_mode == 'agent' else url_for('account_profile_update') }}" enctype="multipart/form-data" id="profileForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <!-- CARD 1 — Profile Picture -->
+    <section class="profile-group-card" aria-labelledby="card-heading-picture">
+      <div class="profile-card-header">
+        <h2 class="profile-card-title" id="card-heading-picture">Profile Picture</h2>
+        <p class="profile-card-desc">Your profile picture appears on the Studio navigation drawer, comments, and audit trails.</p>
+      </div>
+
+      <div class="profile-avatar-row">
+        <!-- Circular avatar preview with dark background and clean monogram fallback -->
+        <div class="profile-avatar-container">
+          {% if user.profile_image %}
+            <img id="profileAvatarPreview" src="{{ url_for('static', filename=user.profile_image) }}" alt="{{ user.first_name }}'s profile" class="profile-avatar-img" onerror="this.style.display='none'; document.getElementById('profileAvatarFallback').style.display='flex';">
+          {% endif %}
+          <div id="profileAvatarFallback" class="profile-avatar-fallback" style="{% if user.profile_image %}display: none;{% else %}display: flex;{% endif %}">
+            {% if user.first_name and user.last_name %}
+              {{ user.first_name[:1] }}{{ user.last_name[:1] }}
+            {% elif user.first_name %}
+              {{ user.first_name[:1] }}
+            {% else %}
+              AU
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="profile-avatar-actions">
+          <div class="profile-upload-wrapper">
+            <label for="profile_image" class="profile-upload-btn-label" role="button" tabindex="0">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <span>Upload new image</span>
+            </label>
+            <input id="profile_image" type="file" name="profile_image" accept="image/jpeg,image/png,image/webp" class="profile-hidden-file-input" onchange="previewSelectedAvatar(this)">
+            <span id="profileFileFeedback" class="profile-file-info">JPEG, PNG, or WebP. Fixed circular crop.</span>
+          </div>
+
+          {% if user.profile_image %}
+          <div>
+            <label class="profile-remove-toggle-label" for="remove_photo">
+              <input id="remove_photo" name="remove_photo" type="checkbox" class="profile-remove-checkbox" onchange="toggleRemoveAvatarState(this)">
+              <span>Remove profile picture</span>
+            </label>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    <!-- CARD 2 — Account Information -->
+    <section class="profile-group-card" aria-labelledby="card-heading-account">
+      <div class="profile-card-header">
+        <h2 class="profile-card-title" id="card-heading-account">Account Information</h2>
+        <p class="profile-card-desc">Personal identity and primary contact credentials across the platform.</p>
+      </div>
+
+      <div class="profile-grid-2">
+        <div class="profile-field-item">
+          <label class="profile-label-text" for="first_name">FIRST NAME <span class="profile-req-star">*</span></label>
+          <input class="profile-input-control" id="first_name" name="first_name" type="text" value="{{ user.first_name }}" required autocomplete="given-name">
+        </div>
+
+        <div class="profile-field-item">
+          <label class="profile-label-text" for="last_name">LAST NAME <span class="profile-req-star">*</span></label>
+          <input class="profile-input-control" id="last_name" name="last_name" type="text" value="{{ user.last_name }}" required autocomplete="family-name">
+        </div>
+
+        <div class="profile-field-item">
+          <label class="profile-label-text" for="email">EMAIL <span class="profile-req-star">*</span></label>
+          <input class="profile-input-control" id="email" name="email" type="email" maxlength="255" value="{{ user.email }}" required autocomplete="email">
+        </div>
+
+        <div class="profile-field-item">
+          <label class="profile-label-text" for="phone">PHONE</label>
+          <input class="profile-input-control" id="phone" name="phone" type="tel" value="{{ user.phone or '' }}" placeholder="Optional phone number" autocomplete="tel">
+        </div>
+      </div>
+
+      <div class="profile-field-item profile-field-full">
+        <label class="profile-label-text" for="address">ADDRESS</label>
+        <textarea class="profile-textarea-control" id="address" name="address" rows="2" maxlength="300" placeholder="Street address, suite, city, state, postal code" autocomplete="street-address">{{ user.address or '' }}</textarea>
+      </div>
+
+      <div class="profile-field-item profile-field-full">
+        <label class="profile-label-text" for="bio">ABOUT / OTHER DETAILS</label>
+        <textarea class="profile-textarea-control" id="bio" name="bio" rows="3" maxlength="1000" placeholder="Brief notes, bio, or role responsibilities">{{ user.bio or '' }}</textarea>
+      </div>
+    </section>
+
+    <!-- CARD 3 — Security Verification -->
+    <section class="profile-group-card profile-security-card" aria-labelledby="card-heading-security">
+      <div class="profile-card-header">
+        <h2 class="profile-card-title" id="card-heading-security">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+          <span>Security Verification</span>
+        </h2>
+        <p class="profile-card-desc">For security reasons, re-authenticating with your current password is only required if you update your primary login email address above.</p>
+      </div>
+
+      <div class="profile-field-item" style="max-width: 480px;">
+        <label class="profile-label-text" for="current_password">CURRENT PASSWORD <span style="font-weight: 400; text-transform: none; color: #64748b; font-size: 11px;">(required only to change email)</span></label>
+        <div class="profile-security-input-wrap">
+          <input class="profile-input-control" id="current_password" name="current_password" type="password" autocomplete="new-password" placeholder="••••••••••••" style="padding-right: 42px;">
+          <button type="button" class="profile-pw-toggle-btn" onclick="togglePasswordVisibility('current_password', this)" aria-label="Toggle password visibility">
+            <svg class="pw-eye-open" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <svg class="pw-eye-closed" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: none;">
+              <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>
+              <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/>
+              <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/>
+              <line x1="2" y1="2" x2="22" y2="22"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTTOM ACTIONS BAR -->
+    <div class="profile-actions-strip">
+      <div>
+        {% if user.is_admin_like %}
+          <a href="{{ url_for('admin_dashboard') }}" class="profile-back-studio-link">
+            <span>← Back to Studio</span>
+          </a>
+        {% elif user.role == 'agent' %}
+          <a href="{{ url_for('agent_workspace', module='dashboard') }}" class="profile-back-studio-link">
+            <span>← Back to agent workspace</span>
+          </a>
+        {% else %}
+          <a href="{{ url_for('storefront') }}" class="profile-back-studio-link">
+            <span>← Back to store</span>
+          </a>
+        {% endif %}
+      </div>
+
+      <div>
+        <button class="profile-submit-pill" type="submit">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
+          <span>Save profile</span>
+        </button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<script>
+  function previewSelectedAvatar(input) {
+    if (input.files && input.files[0]) {
+      var file = input.files[0];
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var img = document.getElementById('profileAvatarPreview');
+        var fallback = document.getElementById('profileAvatarFallback');
+        var feedback = document.getElementById('profileFileFeedback');
+        if (!img) {
+          img = document.createElement('img');
+          img.id = 'profileAvatarPreview';
+          img.className = 'profile-avatar-img';
+          img.alt = 'Profile avatar preview';
+          var container = document.querySelector('.profile-avatar-container');
+          if (container) container.insertBefore(img, container.firstChild);
+        }
+        img.src = e.target.result;
+        img.style.display = 'block';
+        if (fallback) fallback.style.display = 'none';
+        if (feedback) {
+          feedback.textContent = 'Selected: ' + file.name + ' (' + (file.size / 1024).toFixed(1) + ' KB)';
+          feedback.style.color = '#059669';
+          feedback.style.fontWeight = '500';
+        }
+      };
+      reader.readAsDataURL(file);
+      var removeCheckbox = document.getElementById('remove_photo');
+      if (removeCheckbox) removeCheckbox.checked = false;
+    }
+  }
+
+  function toggleRemoveAvatarState(checkbox) {
+    var img = document.getElementById('profileAvatarPreview');
+    var fallback = document.getElementById('profileAvatarFallback');
+    var feedback = document.getElementById('profileFileFeedback');
+    if (checkbox.checked) {
+      if (img) img.style.display = 'none';
+      if (fallback) fallback.style.display = 'flex';
+      if (feedback) {
+        feedback.textContent = 'Profile picture marked for removal upon saving.';
+        feedback.style.color = '#dc2626';
+        feedback.style.fontWeight = '500';
+      }
+    } else {
+      if (img && img.src && !img.src.endsWith('/')) {
+        img.style.display = 'block';
+        if (fallback) fallback.style.display = 'none';
+      }
+      if (feedback) {
+        feedback.textContent = 'JPEG, PNG, or WebP. Fixed circular crop.';
+        feedback.style.color = '';
+        feedback.style.fontWeight = '';
+      }
+    }
+  }
+
+  function togglePasswordVisibility(inputId, btn) {
+    var input = document.getElementById(inputId);
+    if (!input) return;
+    var openIcon = btn.querySelector('.pw-eye-open');
+    var closedIcon = btn.querySelector('.pw-eye-closed');
+    if (input.type === 'password') {
+      input.type = 'text';
+      if (openIcon) openIcon.style.display = 'none';
+      if (closedIcon) closedIcon.style.display = 'block';
+    } else {
+      input.type = 'password';
+      if (openIcon) openIcon.style.display = 'block';
+      if (closedIcon) closedIcon.style.display = 'none';
+    }
+  }
+</script>
 {% endblock %}

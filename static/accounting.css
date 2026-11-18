@@ -1,0 +1,549 @@
+/* ==========================================================================
+   ALL OF US — Enterprise Accounting Glassmorphism Stylesheet
+   Pitch-Black Glassmorphism Aesthetic: bg-white/[0.04], backdrop-blur-xl, border-white/[0.08]
+   Monospace Tabular Numerical Alignment: tabular-nums, SFMono-Regular, Menlo, monospace
+   ========================================================================== */
+
+:root {
+  --ac-bg: #070709;
+  --ac-surface: rgba(255, 255, 255, 0.035);
+  --ac-surface-hover: rgba(255, 255, 255, 0.055);
+  --ac-surface-active: rgba(255, 255, 255, 0.08);
+  --ac-line: rgba(255, 255, 255, 0.08);
+  --ac-line-strong: rgba(255, 255, 255, 0.16);
+  --ac-text: #f3f4f6;
+  --ac-text-muted: #9ca3af;
+  --ac-text-dim: #6b7280;
+  --ac-emerald: #10b981;
+  --ac-emerald-glow: rgba(16, 185, 129, 0.15);
+  --ac-amber: #f59e0b;
+  --ac-amber-glow: rgba(245, 158, 11, 0.15);
+  --ac-purple: #8b5cf6;
+  --ac-purple-glow: rgba(139, 92, 246, 0.15);
+  --ac-cyan: #06b6d4;
+  --ac-rose: #ef4444;
+  --ac-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Tabular Numbers for all financial metrics */
+.ac-num, .ac-table td, .ac-metric-val, .ac-badge-code {
+  font-family: var(--ac-font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Glass Card Container */
+.ac-glass-card {
+  background: var(--ac-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--ac-line);
+  border-radius: 8px;
+  padding: 20px;
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ac-glass-card:hover {
+  border-color: var(--ac-line-strong);
+}
+
+/* Top Navigation Tabs */
+.ac-tabs-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--ac-line);
+  padding-bottom: 12px;
+  margin-bottom: 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ac-tabs-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.ac-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ac-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.ac-tab-btn:hover {
+  color: var(--ac-text);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ac-tab-btn.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--ac-line-strong);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.ac-tab-badge {
+  font-size: 9px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--ac-text-muted);
+}
+
+.ac-tab-badge.amber {
+  background: var(--ac-amber-glow);
+  color: var(--ac-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Executive Metric Grid */
+.ac-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.ac-metric-card {
+  background: var(--ac-surface);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--ac-line);
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ac-metric-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ac-text-dim);
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.ac-metric-val {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1.1;
+  margin-bottom: 6px;
+}
+
+.ac-metric-sub {
+  font-size: 11px;
+  color: var(--ac-text-muted);
+}
+
+/* Section Header */
+.ac-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.ac-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: #ffffff;
+  margin: 0;
+}
+
+.ac-section-subtitle {
+  font-size: 11px;
+  color: var(--ac-text-muted);
+  margin: 3px 0 0 0;
+}
+
+/* Visual Analytics & Financial Figures */
+.ac-charts-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+@media (max-width: 1024px) {
+  .ac-charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ac-chart-box {
+  background: var(--ac-surface);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--ac-line);
+  border-radius: 8px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ac-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 10.5px;
+  color: var(--ac-text-muted);
+  margin-top: 10px;
+}
+
+.ac-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* P&L Breakdown Drop Comparison Bars */
+.ac-pnl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.ac-pnl-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ac-pnl-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ac-text);
+  font-weight: 600;
+}
+
+.ac-pnl-track {
+  height: 9px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  gap: 2px;
+}
+
+.ac-pnl-segment {
+  height: 100%;
+  border-radius: 2px;
+}
+
+/* FX Exposure Meter Radial & Variance */
+.ac-fx-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.ac-fx-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--ac-line);
+  border-radius: 6px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.ac-drift-badge {
+  font-family: var(--ac-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ac-drift-badge.positive {
+  background: var(--ac-emerald-glow);
+  color: var(--ac-emerald);
+}
+
+.ac-drift-badge.negative {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--ac-rose);
+}
+
+/* Buttons */
+.ac-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.ac-btn-primary {
+  background: #ffffff;
+  color: #050505;
+}
+
+.ac-btn-primary:hover {
+  background: #e5e5e5;
+}
+
+.ac-btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ac-text);
+  border-color: var(--ac-line);
+}
+
+.ac-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--ac-line-strong);
+}
+
+.ac-btn-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.ac-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+/* 3-Way Period-End Lock Toggle */
+.ac-lock-toggle-group {
+  display: inline-flex;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--ac-line);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 3px;
+}
+
+.ac-lock-pill {
+  border: none;
+  background: transparent;
+  color: var(--ac-text-dim);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ac-lock-pill.active-open {
+  background: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+}
+
+.ac-lock-pill.active-soft {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.ac-lock-pill.active-hard {
+  background: rgba(239, 68, 68, 0.22);
+  color: #f87171;
+  font-weight: 700;
+}
+
+/* Checklist Widget */
+.ac-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ac-check-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--ac-line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ac-check-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ac-check-item.done {
+  border-color: rgba(16, 185, 129, 0.3);
+  background: rgba(16, 185, 129, 0.04);
+}
+
+/* Tables & Rows */
+.ac-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ac-line);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.ac-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  text-align: left;
+}
+
+.ac-table th {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 10px 14px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ac-text-dim);
+  font-weight: 700;
+  border-bottom: 1px solid var(--ac-line);
+}
+
+.ac-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--ac-text);
+}
+
+.ac-table tr:hover td {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+/* Cost-Center Chips & Badges */
+.ac-cc-badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--ac-font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(139, 92, 246, 0.12);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+/* Status Badges */
+.ac-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.ac-status-badge.posted {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+}
+
+.ac-status-badge.pending {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.ac-status-badge.rejected {
+  background: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+}
+
+.ac-status-badge.fee_adjusted, .ac-status-badge.matched {
+  background: rgba(6, 182, 212, 0.15);
+  color: #22d3ee;
+}
+
+/* File Attachment Chips */
+.ac-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ac-line);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  color: var(--ac-text);
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
+.ac-chip-del {
+  cursor: pointer;
+  color: var(--ac-text-dim);
+  font-size: 11px;
+}
+
+.ac-chip-del:hover {
+  color: var(--ac-rose);
+}
+
+/* Form inputs */
+.ac-input, .ac-select, .ac-textarea {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--ac-line);
+  color: #ffffff;
+  padding: 8px 10px;
+  font-size: 12px;
+  border-radius: 5px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.ac-input:focus, .ac-select:focus, .ac-textarea:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
+/* Passcode Modal Overlay */
+.ac-modal-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.ac-modal-dialog {
+  background: #0d0d11;
+  border: 1px solid var(--ac-line-strong);
+  border-radius: 8px;
+  width: min(440px, 94vw);
+  padding: 22px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8);
+}
+

@@ -141,32 +141,39 @@
 
       <div class="crm-timeline-container">
         <!-- SVG Timeline Chart -->
-        <svg viewBox="0 0 460 140" class="crm-timeline-svg" preserveAspectRatio="none">
-          <line x1="0" y1="125" x2="460" y2="125" stroke="#dedbd0" stroke-width="1"></line>
-          {% set max_count = 1 %}
-          {% for p in analytics.timeline %}
-            {% if p.new_signups + p.repeat_purchases > max_count %}
-              {% set max_count = p.new_signups + p.repeat_purchases %}
-            {% endif %}
-          {% endfor %}
+        <svg viewBox="0 0 460 135" class="crm-timeline-svg" preserveAspectRatio="none">
+          <!-- Reference Grid Lines & Y-Axis Markers -->
+          <line x1="28" y1="30" x2="455" y2="30" stroke="#f1efe8" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text x="22" y="33" font-size="8" fill="#999" text-anchor="end">{{ analytics.timeline_max }}</text>
+
+          <line x1="28" y1="68" x2="455" y2="68" stroke="#f1efe8" stroke-width="1" stroke-dasharray="3 3"></line>
+          <text x="22" y="71" font-size="8" fill="#999" text-anchor="end">{{ analytics.timeline_mid }}</text>
+
+          <line x1="28" y1="105" x2="455" y2="105" stroke="#dedbd0" stroke-width="1"></line>
+          <text x="22" y="108" font-size="8" fill="#999" text-anchor="end">0</text>
+
           {% set n_points = analytics.timeline|length %}
-          {% set col_w = (420 / n_points) if n_points > 0 else 40 %}
+          {% set col_w = (410 / n_points) if n_points > 0 else 38 %}
 
           {% for p in analytics.timeline %}
-            {% set x = 20 + loop.index0 * col_w %}
-            {% set h_signups = (p.new_signups / (max_count or 1)) * 90 %}
-            {% set h_repeat = (p.repeat_purchases / (max_count or 1)) * 90 %}
+            {% set x = 36 + loop.index0 * col_w %}
             
             <!-- Repeat Purchases Bar -->
-            <rect x="{{ x }}" y="{{ 125 - h_repeat }}" width="{{ (col_w * 0.4)|round }}" height="{{ h_repeat }}" fill="#7c3aed" rx="2">
-              <title>{{ p.label }}: {{ p.repeat_purchases }} repeat purchases</title>
+            {% if p.repeat_purchases > 0 %}
+            <rect x="{{ x }}" y="{{ p.y_repeat }}" width="{{ (col_w * 0.38)|round }}" height="{{ p.h_repeat }}" fill="#7c3aed" rx="2" class="crm-bar-rect">
+              <title>{{ p.label }}: {{ p.repeat_purchases }} repeat purchase(s)</title>
             </rect>
-            <!-- New Sign-ups Bar -->
-            <rect x="{{ x + (col_w * 0.45)|round }}" y="{{ 125 - h_signups }}" width="{{ (col_w * 0.4)|round }}" height="{{ h_signups }}" fill="#111111" rx="2">
-              <title>{{ p.label }}: {{ p.new_signups }} new sign-ups</title>
-            </rect>
+            {% endif %}
 
-            <text x="{{ x + (col_w * 0.4)|round }}" y="137" font-size="7.5" fill="#888" text-anchor="middle">{{ p.label }}</text>
+            <!-- New Sign-ups Bar -->
+            {% if p.new_signups > 0 %}
+            <rect x="{{ x + (col_w * 0.42)|round }}" y="{{ p.y_signups }}" width="{{ (col_w * 0.38)|round }}" height="{{ p.h_signups }}" fill="#111111" rx="2" class="crm-bar-rect">
+              <title>{{ p.label }}: {{ p.new_signups }} new sign-up(s)</title>
+            </rect>
+            {% endif %}
+
+            <!-- Interval Date Label -->
+            <text x="{{ x + (col_w * 0.4)|round }}" y="122" font-size="7.5" fill="#777" text-anchor="middle">{{ p.label }}</text>
           {% endfor %}
         </svg>
 
@@ -191,67 +198,66 @@
         <!-- Donut 1: Acquisition Type -->
         <div class="crm-donut-box">
           <span class="crm-donut-title">Acquisition Type</span>
-          <div class="crm-donut-svg-wrap">
-            <svg viewBox="0 0 100 100" class="crm-donut-svg">
-              <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="14"></circle>
-              {% set cumulative_pct = 0.0 %}
+          <div class="crm-donut-content">
+            <div class="crm-donut-svg-wrap">
+              <svg viewBox="0 0 100 100" class="crm-donut-svg">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="12"></circle>
+                {% for d in analytics.donuts.acquisition_types %}
+                  <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="12"
+                          stroke-dasharray="{{ d.dash_array }}" stroke-dashoffset="{{ d.dash_offset }}"
+                          class="crm-donut-slice" data-atype="{{ d.key }}"
+                          onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
+                    <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
+                  </circle>
+                {% endfor %}
+              </svg>
+              <div class="crm-donut-center">
+                <strong>{{ analytics.kpi.total_customers }}</strong>
+                <small>Total</small>
+              </div>
+            </div>
+            <!-- Legend -->
+            <div class="crm-donut-legend">
               {% for d in analytics.donuts.acquisition_types %}
-                {% set dash_array = (d.percent * 2.387)|round(1) %}
-                {% set dash_offset = (238.7 - (cumulative_pct * 2.387))|round(1) %}
-                <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="14"
-                        stroke-dasharray="{{ dash_array }} 238.7" stroke-dashoffset="{{ dash_offset }}"
-                        class="crm-donut-slice" data-atype="{{ d.key }}"
-                        onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
-                  <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
-                </circle>
+              <div class="crm-donut-legend-item" data-atype="{{ d.key }}" onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
+                <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
+                <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
+              </div>
               {% endfor %}
-            </svg>
-            <div class="crm-donut-center">
-              <strong>{{ analytics.kpi.total_customers }}</strong>
-              <small>Customers</small>
             </div>
-          </div>
-          <!-- Legend -->
-          <div class="crm-donut-legend">
-            {% for d in analytics.donuts.acquisition_types %}
-            <div class="crm-donut-legend-item" data-atype="{{ d.key }}" onclick="window.crmFilterByAcquisitionType('{{ d.key }}')">
-              <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
-              <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
-            </div>
-            {% endfor %}
           </div>
         </div>
 
         <!-- Donut 2: Acquisition Channels -->
         <div class="crm-donut-box">
           <span class="crm-donut-title">Client Channels</span>
-          <div class="crm-donut-svg-wrap">
-            <svg viewBox="0 0 100 100" class="crm-donut-svg">
-              <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="14"></circle>
+          <div class="crm-donut-content">
+            <div class="crm-donut-svg-wrap">
+              <svg viewBox="0 0 100 100" class="crm-donut-svg">
+                <circle cx="50" cy="50" r="38" fill="none" stroke="#f0eee6" stroke-width="12"></circle>
+                {% for d in analytics.donuts.acquisition_channels %}
+                  <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="12"
+                          stroke-dasharray="{{ d.dash_array }}" stroke-dashoffset="{{ d.dash_offset }}"
+                          class="crm-donut-slice" data-channel="{{ d.key }}"
+                          onclick="window.crmFilterByChannel('{{ d.key }}')">
+                    <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
+                  </circle>
+                {% endfor %}
+              </svg>
+              <div class="crm-donut-center">
+                <strong>{{ analytics.kpi.total_customers }}</strong>
+                <small>Mix</small>
+              </div>
+            </div>
+            <!-- Legend -->
+            <div class="crm-donut-legend">
               {% for d in analytics.donuts.acquisition_channels %}
-                {% set dash_array = (d.percent * 2.387)|round(1) %}
-                {% set dash_offset = (238.7 - (loop.index0 * 75))|round(1) %}
-                <circle cx="50" cy="50" r="38" fill="none" stroke="{{ d.color }}" stroke-width="14"
-                        stroke-dasharray="{{ dash_array }} 238.7" stroke-dashoffset="{{ dash_offset }}"
-                        class="crm-donut-slice" data-channel="{{ d.key }}"
-                        onclick="window.crmFilterByChannel('{{ d.key }}')">
-                  <title>{{ d.label }}: {{ d.count }} ({{ d.percent }}%)</title>
-                </circle>
+              <div class="crm-donut-legend-item" data-channel="{{ d.key }}" onclick="window.crmFilterByChannel('{{ d.key }}')">
+                <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
+                <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
+              </div>
               {% endfor %}
-            </svg>
-            <div class="crm-donut-center">
-              <strong>{{ analytics.kpi.total_customers }}</strong>
-              <small>Mix</small>
             </div>
-          </div>
-          <!-- Legend -->
-          <div class="crm-donut-legend">
-            {% for d in analytics.donuts.acquisition_channels %}
-            <div class="crm-donut-legend-item" data-channel="{{ d.key }}" onclick="window.crmFilterByChannel('{{ d.key }}')">
-              <span><i class="crm-legend-dot" style="background: {{ d.color }};"></i> {{ d.label }}</span>
-              <strong>{{ d.count }} <small style="color: #777; font-weight: normal;">({{ d.percent }}%)</small></strong>
-            </div>
-            {% endfor %}
           </div>
         </div>
       </div>

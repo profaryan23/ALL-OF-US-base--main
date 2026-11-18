@@ -738,7 +738,7 @@
   };
 
   function highlightDonuts() {
-    // Channel Donut
+    // Channel Donut Slices & Legends
     $$('.crm-donut-slice[data-channel]').forEach(sl => {
       if (!state.channel) {
         sl.classList.remove('active', 'fade');
@@ -750,8 +750,19 @@
         sl.classList.add('fade');
       }
     });
+    $$('.crm-donut-legend-item[data-channel]').forEach(item => {
+      if (!state.channel) {
+        item.classList.remove('active', 'fade');
+      } else if (item.dataset.channel === state.channel) {
+        item.classList.add('active');
+        item.classList.remove('fade');
+      } else {
+        item.classList.remove('active');
+        item.classList.add('fade');
+      }
+    });
 
-    // Acquisition Type Donut
+    // Acquisition Type Donut Slices & Legends
     $$('.crm-donut-slice[data-atype]').forEach(sl => {
       if (!state.acquisitionType) {
         sl.classList.remove('active', 'fade');
@@ -761,6 +772,17 @@
       } else {
         sl.classList.remove('active');
         sl.classList.add('fade');
+      }
+    });
+    $$('.crm-donut-legend-item[data-atype]').forEach(item => {
+      if (!state.acquisitionType) {
+        item.classList.remove('active', 'fade');
+      } else if (item.dataset.atype === state.acquisitionType) {
+        item.classList.add('active');
+        item.classList.remove('fade');
+      } else {
+        item.classList.remove('active');
+        item.classList.add('fade');
       }
     });
   }

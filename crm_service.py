@@ -384,6 +384,26 @@ def calculate_crm_analytics(
         for k, count in channel_counts.items()
     ]
 
+    # Precalculate SVG stroke-dasharray and stroke-dashoffset for perfect 360-degree donut circles
+    circumference = 238.8
+    cum_pct_1 = 0.0
+    for d in donut_acquisition_types:
+        pct = d["percent"]
+        arc_len = round((pct / 100.0) * circumference, 1)
+        offset = round(circumference - (cum_pct_1 / 100.0 * circumference), 1)
+        cum_pct_1 += pct
+        d["dash_array"] = f"{arc_len} {circumference}"
+        d["dash_offset"] = f"{offset}"
+
+    cum_pct_2 = 0.0
+    for d in donut_acquisition_channels:
+        pct = d["percent"]
+        arc_len = round((pct / 100.0) * circumference, 1)
+        offset = round(circumference - (cum_pct_2 / 100.0 * circumference), 1)
+        cum_pct_2 += pct
+        d["dash_array"] = f"{arc_len} {circumference}"
+        d["dash_offset"] = f"{offset}"
+
     # Timeline Chart: New Sign-ups vs Repeat Purchases over intervals
     # Generate 7-12 intervals based on window
     num_bins = 7 if window == "7D" else (10 if window == "30D" else 12)
@@ -413,8 +433,30 @@ def calculate_crm_analytics(
             "repeat_purchases": bin_repeat,
         })
 
+    # Robust Timeline Scaling & Coordinate Calculation
+    raw_max = max([max(p["new_signups"], p["repeat_purchases"]) for p in timeline_points] + [1])
+    if raw_max <= 4:
+        timeline_max = 4
+    elif raw_max <= 10:
+        timeline_max = 10
+    elif raw_max <= 20:
+        timeline_max = 20
+    else:
+        timeline_max = ((raw_max + 9) // 10) * 10
+
+    timeline_mid = timeline_max // 2
+
+    # Baseline y = 105, Max bar height = 75px
+    for p in timeline_points:
+        p["h_signups"] = max(2 if p["new_signups"] > 0 else 0, round((p["new_signups"] / timeline_max) * 75, 1))
+        p["y_signups"] = round(105 - p["h_signups"], 1)
+        p["h_repeat"] = max(2 if p["repeat_purchases"] > 0 else 0, round((p["repeat_purchases"] / timeline_max) * 75, 1))
+        p["y_repeat"] = round(105 - p["h_repeat"], 1)
+
     return {
         "window": window,
+        "timeline_max": timeline_max,
+        "timeline_mid": timeline_mid,
         "kpi": {
             "total_customers": total_customers_count,
             "mom_growth_pct": mom_growth_pct,

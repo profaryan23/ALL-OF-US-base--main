@@ -9,8 +9,27 @@
       <button type="button" class="mobile-sidebar-close" id="mobileSidebarClose" aria-label="Close navigation menu">✕</button>
     </div>
     <div class="sidebar-profile-card">
-      <div class="sidebar-avatar-wrap">{% if current_user.profile_image %}<img class="sidebar-avatar-img" src="{{ url_for('static', filename=current_user.profile_image) }}" alt="Your profile">{% else %}<div class="sidebar-avatar-circle" aria-hidden="true">{{ current_user.first_name[:1] }}</div>{% endif %}</div>
-      <div class="sidebar-user-meta"><h3 class="sidebar-user-name">{{ current_user.first_name }} {{ current_user.last_name }}</h3><p class="sidebar-user-email">{{ current_user.email }}</p><a href="{{ url_for('agent_profile') }}">Edit profile & picture</a></div>
+      <div class="sidebar-avatar-wrap">
+        <div class="sidebar-avatar-container" style="position: relative; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; background: linear-gradient(145deg, #2a2a2a, #141414); display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 255, 255, 0.22); flex-shrink: 0; box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.03);">
+          {% if current_user and current_user.profile_image %}
+            <img class="sidebar-avatar-img" src="{{ url_for('static', filename=current_user.profile_image) }}" alt="Your profile" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';">
+          {% endif %}
+          <div class="sidebar-avatar-fallback" style="{% if current_user and current_user.profile_image %}display: none;{% else %}display: flex;{% endif %} width: 100%; height: 100%; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: #ffffff; letter-spacing: 0.05em; text-transform: uppercase;">
+            {% if current_user and current_user.first_name and current_user.last_name %}
+              {{ current_user.first_name[:1] }}{{ current_user.last_name[:1] }}
+            {% elif current_user and current_user.first_name %}
+              {{ current_user.first_name[:1] }}
+            {% else %}
+              AU
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="sidebar-user-meta" style="min-width: 0; flex: 1; overflow: hidden;">
+        <h3 class="sidebar-user-name" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin: 0; font-size: 12px; font-weight: 600; color: #ffffff;">{{ current_user.first_name }} {{ current_user.last_name }}</h3>
+        <p class="sidebar-user-email" style="text-overflow: ellipsis; white-space: nowrap; overflow: hidden; margin: 2px 0 0; font-size: 11px; color: #94a3b8; display: block; max-width: 100%;" title="{{ current_user.email }}">{{ current_user.email }}</p>
+        <a href="{{ url_for('agent_profile') }}">Edit profile & picture</a>
+      </div>
     </div>
     <div class="sidebar-nav-section">
       <div class="sidebar-section-heading">AGENT WORKSPACE</div>
