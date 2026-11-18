@@ -48,7 +48,14 @@ def migrate_enterprise_accounting_schema(engine, Base, SessionLocal):
     """
     Safely creates new accounting tables and adds enterprise columns
     to existing tables in a non-destructive, backward-compatible manner.
+    Works seamlessly across PostgreSQL and SQLite.
     """
+    is_postgres = engine.dialect.name == "postgresql"
+    time_type = "TIMESTAMP" if is_postgres else "DATETIME"
+
+    # Ensure all tables registered in Base are created safely via SQLAlchemy dialect abstraction
+    Base.metadata.create_all(engine)
+
     with engine.begin() as conn:
         inspector = inspect(conn)
         tables = inspector.get_table_names()
@@ -67,7 +74,7 @@ def migrate_enterprise_accounting_schema(engine, Base, SessionLocal):
             if "approved_by" not in cols:
                 conn.execute(text("ALTER TABLE journal_entries ADD COLUMN approved_by INTEGER"))
             if "approved_at" not in cols:
-                conn.execute(text("ALTER TABLE journal_entries ADD COLUMN approved_at DATETIME"))
+                conn.execute(text(f"ALTER TABLE journal_entries ADD COLUMN approved_at {time_type}"))
 
         # 2. Update journal_lines with enterprise columns if missing
         if "journal_lines" in tables:
@@ -82,53 +89,6 @@ def migrate_enterprise_accounting_schema(engine, Base, SessionLocal):
             cols = {c["name"] for c in inspector.get_columns("accounts")}
             if "cost_center" not in cols:
                 conn.execute(text("ALTER TABLE accounts ADD COLUMN cost_center VARCHAR(50) DEFAULT ''"))
-
-        # 4. Create accounting_settings table if missing
-        if "accounting_settings" not in tables:
-            conn.execute(text("""
-                CREATE TABLE accounting_settings (
-                    id INTEGER PRIMARY KEY,
-                    lock_state VARCHAR(20) DEFAULT 'open',
-                    lock_passcode_hash VARCHAR(255) DEFAULT '',
-                    threshold_amount NUMERIC(12, 2) DEFAULT 50000.00,
-                    require_dual_auth BOOLEAN DEFAULT 0,
-                    checklist_json TEXT DEFAULT '{}',
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-
-        # 5. Create fx_rates table if missing
-        if "fx_rates" not in tables:
-            conn.execute(text("""
-                CREATE TABLE fx_rates (
-                    id INTEGER PRIMARY KEY,
-                    currency VARCHAR(10) UNIQUE NOT NULL,
-                    base_currency VARCHAR(10) DEFAULT 'PKR',
-                    current_rate NUMERIC(12, 4) NOT NULL,
-                    previous_rate NUMERIC(12, 4) NOT NULL,
-                    drift_pct NUMERIC(6, 2) DEFAULT 0.00,
-                    unrealized_exposure NUMERIC(14, 2) DEFAULT 0.00,
-                    last_settled_at DATETIME,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """))
-
-        # 6. Create reconciliation_items table if missing
-        if "reconciliation_items" not in tables:
-            conn.execute(text("""
-                CREATE TABLE reconciliation_items (
-                    id INTEGER PRIMARY KEY,
-                    feed_date DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    reference VARCHAR(100) NOT NULL,
-                    gateway_name VARCHAR(60) NOT NULL,
-                    gross_amount NUMERIC(12, 2) NOT NULL,
-                    fee_amount NUMERIC(12, 2) DEFAULT 0.00,
-                    net_amount NUMERIC(12, 2) NOT NULL,
-                    status VARCHAR(30) DEFAULT 'unreconciled',
-                    matched_entry_id INTEGER,
-                    notes VARCHAR(255) DEFAULT ''
-                )
-            """))
 
     # Seed required enterprise accounts, initial FX rates, settings, and reconciliation feed
     seed_enterprise_accounting(SessionLocal)
